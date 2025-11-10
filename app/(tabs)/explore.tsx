@@ -8,12 +8,10 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Fonts } from '@/constants/theme';
-import { HelloWave } from '@/components/hello-wave';
 
 export default function TabTwoScreen() {
   return (
       <ThemedView style={styles.container}>
-        <HelloWave />
         <ThemedText style={styles.title}>Explore</ThemedText>
       </ThemedView>
     );

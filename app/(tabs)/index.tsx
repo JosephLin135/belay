@@ -1,17 +1,21 @@
 import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
+import { Platform, StyleSheet, View } from 'react-native';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { Link, useLocalSearchParams } from 'expo-router';
 
 export default function HomeScreen() {
+  const params = useLocalSearchParams();
+  const app = (params?.app as string) ?? 'belaybuddy';
+
   return (
     <ThemedView style={styles.container}>
-      <HelloWave />
-      <ThemedText style={styles.title}>Welcome</ThemedText>
+      {app === 'belaybuddy' ? (
+        <ThemedText style={styles.title}>BelayBuddy</ThemedText>
+      ) : (
+        <ThemedText style={styles.title}>RouteVision</ThemedText>
+      )}
     </ThemedView>
   );
 }
