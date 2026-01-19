@@ -14,8 +14,13 @@ try {
 
 let AsyncStorage: any;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  AsyncStorage = require('@react-native-async-storage/async-storage').default;
+  // Only require AsyncStorage if window is defined (not SSR/static export)
+  if (typeof window !== 'undefined') {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    AsyncStorage = require('@react-native-async-storage/async-storage').default;
+  } else {
+    AsyncStorage = undefined;
+  }
 } catch (e) {
   AsyncStorage = undefined;
 }

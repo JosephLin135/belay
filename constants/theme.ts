@@ -5,25 +5,50 @@
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+// Climbing-inspired color palette
+const tintColorLight = '#799FCB'; // Calm slate blue
+const tintColorDark = '#A3BFDE';
 
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
+    text: '#1E293B',
+    background: '#FAFAF9',
     tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
+    icon: '#64748B',
+    tabIconDefault: '#94A3B8',
     tabIconSelected: tintColorLight,
+    // Extended climbing palette
+    primary: '#799FCB',
+    primaryDark: '#5A7FB0',
+    secondary: '#2D4A5E',
+    accent: '#34D399',
+    surface: '#FFFFFF',
+    surfaceAlt: '#F1F5F9',
+    border: '#E2E8F0',
+    textSecondary: '#64748B',
+    success: '#22C55E',
+    warning: '#F59E0B',
+    error: '#EF4444',
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
+    text: '#F1F5F9',
+    background: '#0F172A',
     tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
+    icon: '#94A3B8',
+    tabIconDefault: '#64748B',
     tabIconSelected: tintColorDark,
+    // Extended climbing palette
+    primary: '#A3BFDE',
+    primaryDark: '#799FCB',
+    secondary: '#5EADD4',
+    accent: '#34D399',
+    surface: '#1E293B',
+    surfaceAlt: '#334155',
+    border: '#334155',
+    textSecondary: '#94A3B8',
+    success: '#22C55E',
+    warning: '#F59E0B',
+    error: '#EF4444',
   },
 };
 

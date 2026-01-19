@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { TouchableOpacity } from 'react-native';
+import { TouchableOpacity, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
@@ -23,6 +23,13 @@ export default function TabLayout() {
     // get initial session
     supabase.auth.getSession().then((res: any) => {
       if (!mounted) return;
+      // Handle invalid refresh token error
+      if (res?.error?.message?.includes('refresh token')) {
+        console.warn('Invalid refresh token, signing out...');
+        supabase.auth.signOut();
+        setSession(null);
+        return;
+      }
       setSession(res?.data?.session ?? null);
       // if a selected app was stored before OAuth, navigate to it
       (async () => {
@@ -36,6 +43,13 @@ export default function TabLayout() {
           // ignore
         }
       })();
+    }).catch((err: any) => {
+      // Handle auth errors (e.g., invalid refresh token)
+      console.warn('Auth session error:', err?.message);
+      if (mounted) {
+        supabase.auth.signOut();
+        setSession(null);
+      }
     });
 
     // subscribe to auth changes
@@ -86,43 +100,99 @@ export default function TabLayout() {
 
   return (
     <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+      screenOptions={({ route }) => ({
+        tabBarActiveTintColor: '#799FCB',
+        tabBarInactiveTintColor: colorScheme === 'dark' ? '#64748B' : '#94A3B8',
         headerShown: false,
         tabBarButton: HapticTab,
-        // make the tab bar background white and the active tab a light gray on light mode
         tabBarStyle: {
-          backgroundColor: Colors[colorScheme ?? 'light'].background,
+          backgroundColor: colorScheme === 'dark' ? '#1E293B' : '#FFFFFF',
+          borderTopWidth: 0,
+          elevation: 24,
+          shadowColor: '#1E293B',
+          shadowOffset: { width: 0, height: -8 },
+          shadowOpacity: 0.12,
+          shadowRadius: 16,
+          height: 88,
+          paddingBottom: 8,
+          paddingTop: 12,
+          paddingHorizontal: 15,
         },
-        tabBarActiveBackgroundColor: colorScheme === 'light' ? '#f2f2f2' : undefined,
-      }}>
+        tabBarActiveBackgroundColor: 'transparent',
+        tabBarLabelPosition: 'below-icon',
+        tabBarItemStyle: {
+          borderRadius: 16,
+          marginHorizontal: 4,
+          paddingVertical: 6,
+        },
+      })}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          headerShown: true,
-          headerRight: () => (
-            <TouchableOpacity
-              onPress={async () => {
-                try {
-                  await supabase.auth.signOut();
-                } catch (e) {
-                  // ignore
-                }
-              }}
-              style={{ paddingHorizontal: 12 }}
-            >
-              <ThemedText lightColor="#36454F">Sign out</ThemedText>
-            </TouchableOpacity>
+          title: '',
+          headerShown: false,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={{ 
+              backgroundColor: focused ? 'rgba(121, 159, 203, 0.15)' : 'transparent',
+              padding: 10,
+              borderRadius: 14,
+              transform: [{ scale: focused ? 1.05 : 1 }],
+            }}>
+              <IconSymbol size={30} name="brain.head.profile.fill" color={color} />
+            </View>
           ),
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="community"
+        options={{
+          title: '',
+          headerShown: false,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={{
+              backgroundColor: focused ? 'rgba(121, 159, 203, 0.15)' : 'transparent',
+              padding: 10,
+              borderRadius: 14,
+              transform: [{ scale: focused ? 1.05 : 1 }],
+            }}>
+              <IconSymbol size={30} name="bubble.left.and.bubble.right.fill" color={color} />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
         name="explore"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: '',
+          headerShown: false,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={{
+              backgroundColor: focused ? 'rgba(121, 159, 203, 0.15)' : 'transparent',
+              padding: 10,
+              borderRadius: 14,
+              transform: [{ scale: focused ? 1.05 : 1 }],
+            }}>
+              <IconSymbol size={30} name="mappin.and.ellipse.circle" color={color} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: '',
+          headerShown: false,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={{
+              backgroundColor: focused ? 'rgba(121, 159, 203, 0.15)' : 'transparent',
+              padding: 10,
+              borderRadius: 14,
+              transform: [{ scale: focused ? 1.05 : 1 }],
+            }}>
+              <IconSymbol size={30} name="person.circle.fill" color={color} />
+            </View>
+          ),
         }}
       />
     </Tabs>
