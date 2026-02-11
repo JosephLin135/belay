@@ -10,8 +10,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
-import { ThemedText } from '@/components/themed-text';
-import { Fonts, Colors } from '@/constants/theme';
 
 import { Modal, Platform, StyleSheet, TextInput, TouchableOpacity, Text, FlatList, Alert, ActionSheetIOS, ActivityIndicator, ScrollView, Dimensions } from 'react-native';
 

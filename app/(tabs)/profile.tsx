@@ -13,6 +13,7 @@ import {
   ActionSheetIOS,
   Platform,
   KeyboardAvoidingView,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,6 +21,18 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import * as FileSystem from 'expo-file-system/legacy';
+import { resetOnboarding } from '@/components/onboarding-screen';
+import { 
+  getSavedPlan, 
+  savePlanSelection, 
+  getPlanById, 
+  PLANS, 
+  Plan, 
+  PlanId,
+  MembershipScreen 
+} from '@/components/membership-screen';
+
+const { width } = Dimensions.get('window');
 
 // Simple base64 to ArrayBuffer decoder
 function decode(base64: string): ArrayBuffer {
@@ -104,6 +117,12 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats>({ posts_count: 0, comments_count: 0, likes_received: 0 });
   
+  // Plan state
+  const [currentPlan, setCurrentPlan] = useState<Plan | null>(null);
+  const [showChangePlanModal, setShowChangePlanModal] = useState(false);
+  const [selectedNewPlan, setSelectedNewPlan] = useState<Plan | null>(null);
+  const [showMembershipModal, setShowMembershipModal] = useState(false);
+  
   // Editable fields
   const [name, setName] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -125,7 +144,19 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     loadProfile();
+    loadCurrentPlan();
   }, []);
+
+  const loadCurrentPlan = async () => {
+    const planId = await getSavedPlan();
+    if (planId) {
+      const plan = getPlanById(planId);
+      if (plan) setCurrentPlan(plan);
+    } else {
+      // Default to free plan
+      setCurrentPlan(PLANS[0]);
+    }
+  };
 
   const loadProfile = async () => {
     try {
@@ -270,6 +301,24 @@ export default function ProfileScreen() {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
+            await supabase.auth.signOut();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleResetOnboarding = async () => {
+    Alert.alert(
+      'Reset Onboarding',
+      'This will reset the onboarding and sign you out to show the slides again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset & Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            await resetOnboarding();
             await supabase.auth.signOut();
           },
         },
@@ -464,12 +513,20 @@ export default function ProfileScreen() {
           <Text style={styles.heroTitle}>CRUXLY</Text>
           <Text style={styles.heroSubtitle}>My information</Text>
         </View>
-        <TouchableOpacity 
-          style={styles.signOutButton}
-          onPress={handleSignOut}
-        >
-          <Ionicons name="log-out-outline" size={20} color="#FFF" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <TouchableOpacity 
+            style={styles.signOutButton}
+            onPress={handleResetOnboarding}
+          >
+            <Ionicons name="refresh-outline" size={20} color="#FFF" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.signOutButton}
+            onPress={handleSignOut}
+          >
+            <Ionicons name="log-out-outline" size={20} color="#FFF" />
+          </TouchableOpacity>
+        </View>
       </LinearGradient>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -755,6 +812,57 @@ export default function ProfileScreen() {
           </LinearGradient>
         </TouchableOpacity>
 
+        {/* Current Plan Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Membership</Text>
+          <Text style={styles.sectionSubtitle}>Your current subscription plan</Text>
+          
+          {currentPlan && (
+            <View style={styles.currentPlanCard}>
+              <LinearGradient
+                colors={currentPlan.id === 'free' ? ['#64748B', '#475569'] : ['#1e4620', '#449e00']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.currentPlanGradient}
+              >
+                <View style={styles.currentPlanHeader}>
+                  <View>
+                    <Text style={styles.currentPlanName}>{currentPlan.name}</Text>
+                    <Text style={styles.currentPlanPrice}>
+                      {currentPlan.price}{currentPlan.period !== 'forever' ? currentPlan.period : ''}
+                    </Text>
+                  </View>
+                  {currentPlan.id !== 'free' && (
+                    <View style={styles.proBadge}>
+                      <Ionicons name="diamond" size={14} color="#FFF" />
+                      <Text style={styles.proBadgeText}>PRO</Text>
+                    </View>
+                  )}
+                </View>
+                
+                <View style={styles.currentPlanFeatures}>
+                  {currentPlan.features.slice(0, 3).map((feature, idx) => (
+                    <View key={idx} style={styles.currentPlanFeatureRow}>
+                      <Ionicons name="checkmark" size={14} color="rgba(255,255,255,0.8)" />
+                      <Text style={styles.currentPlanFeatureText}>{feature}</Text>
+                    </View>
+                  ))}
+                </View>
+              </LinearGradient>
+              
+              <TouchableOpacity 
+                style={styles.changePlanButton}
+                onPress={() => setShowChangePlanModal(true)}
+              >
+                <Ionicons name="swap-horizontal" size={18} color="#449e" />
+                <Text style={styles.changePlanButtonText}>
+                  {currentPlan.id === 'free' ? 'Upgrade Plan' : 'Change Plan'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
         {/* Account Info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
@@ -777,6 +885,98 @@ export default function ProfileScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* Change Plan Modal */}
+      <Modal
+        visible={showChangePlanModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowChangePlanModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.changePlanModal}>
+            <View style={styles.changePlanHeader}>
+              <Text style={styles.changePlanTitle}>Change Your Plan</Text>
+              <TouchableOpacity onPress={() => setShowChangePlanModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.plansScrollView} showsVerticalScrollIndicator={false}>
+              {PLANS.map((plan) => {
+                const isCurrentPlan = currentPlan?.id === plan.id;
+                return (
+                  <TouchableOpacity
+                    key={plan.id}
+                    style={[
+                      styles.planOptionCard,
+                      isCurrentPlan && styles.planOptionCardCurrent,
+                    ]}
+                    onPress={() => {
+                      if (!isCurrentPlan) {
+                        setSelectedNewPlan(plan);
+                        setShowChangePlanModal(false);
+                        setShowMembershipModal(true);
+                      }
+                    }}
+                    disabled={isCurrentPlan}
+                  >
+                    <View style={styles.planOptionHeader}>
+                      <View>
+                        <View style={styles.planOptionNameRow}>
+                          <Text style={styles.planOptionName}>{plan.name}</Text>
+                          {plan.badge && (
+                            <View style={[styles.planOptionBadge, plan.id === 'yearly' && styles.planOptionBadgeYellow]}>
+                              <Text style={styles.planOptionBadgeText}>{plan.badge}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.planOptionPrice}>
+                          {plan.price}{plan.period !== 'forever' ? plan.period : ''}
+                        </Text>
+                      </View>
+                      {isCurrentPlan ? (
+                        <View style={styles.currentPlanIndicator}>
+                          <Text style={styles.currentPlanIndicatorText}>Current</Text>
+                        </View>
+                      ) : (
+                        <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
+                      )}
+                    </View>
+                    
+                    <View style={styles.planOptionFeatures}>
+                      {plan.features.slice(0, 3).map((feature, idx) => (
+                        <View key={idx} style={styles.planOptionFeatureRow}>
+                          <Ionicons name="checkmark-circle" size={14} color="#449e" />
+                          <Text style={styles.planOptionFeatureText}>{feature}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Membership Confirmation Modal */}
+      {selectedNewPlan && (
+        <MembershipScreen
+          visible={showMembershipModal}
+          selectedPlan={selectedNewPlan}
+          onClose={() => {
+            setShowMembershipModal(false);
+            setSelectedNewPlan(null);
+          }}
+          onConfirm={(plan) => {
+            setCurrentPlan(plan);
+            setShowMembershipModal(false);
+            setSelectedNewPlan(null);
+            Alert.alert('Success', `Your plan has been changed to ${plan.name}!`);
+          }}
+        />
+      )}
 
       {/* Gym Search Modal */}
       <Modal
@@ -1342,5 +1542,171 @@ const styles = StyleSheet.create({
   gymSearchHintText: {
     fontSize: 14,
     color: '#94A3B8',
+  },
+
+  // Current Plan Card
+  currentPlanCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  currentPlanGradient: {
+    padding: 20,
+  },
+  currentPlanHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  currentPlanName: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  currentPlanPrice: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: 2,
+  },
+  proBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  proBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  currentPlanFeatures: {
+    gap: 6,
+  },
+  currentPlanFeatureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  currentPlanFeatureText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  changePlanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  changePlanButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#449e',
+  },
+
+  // Change Plan Modal
+  changePlanModal: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '85%',
+    paddingBottom: 34,
+  },
+  changePlanHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  changePlanTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  plansScrollView: {
+    padding: 16,
+  },
+  planOptionCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+  },
+  planOptionCardCurrent: {
+    borderColor: '#449e',
+    backgroundColor: '#f0fff4',
+  },
+  planOptionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  planOptionNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  planOptionName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  planOptionBadge: {
+    backgroundColor: '#449e',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  planOptionBadgeYellow: {
+    backgroundColor: '#F59E0B',
+  },
+  planOptionBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  planOptionPrice: {
+    fontSize: 14,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  currentPlanIndicator: {
+    backgroundColor: '#449e',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  currentPlanIndicatorText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+  planOptionFeatures: {
+    gap: 6,
+  },
+  planOptionFeatureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  planOptionFeatureText: {
+    fontSize: 13,
+    color: '#64748B',
   },
 });

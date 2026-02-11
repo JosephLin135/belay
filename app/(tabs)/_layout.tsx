@@ -3,58 +3,87 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { TouchableOpacity, View } from 'react-native';
+import { TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import AuthScreen from '@/components/auth-screen';
+import AuthScreen from '@/components/auth-screen-new';
+import { OnboardingScreen, checkOnboardingComplete } from '@/components/onboarding-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const [session, setSession] = useState<any | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
     let mounted = true;
 
-    // get initial session
-    supabase.auth.getSession().then((res: any) => {
-      if (!mounted) return;
-      // Handle invalid refresh token error
-      if (res?.error?.message?.includes('refresh token')) {
-        console.warn('Invalid refresh token, signing out...');
-        supabase.auth.signOut();
-        setSession(null);
-        return;
-      }
-      setSession(res?.data?.session ?? null);
-      // if a selected app was stored before OAuth, navigate to it
-      (async () => {
-        try {
-          const choice = await AsyncStorage.getItem('selectedApp');
-          if (choice) {
-            await AsyncStorage.removeItem('selectedApp');
-            router.replace({ pathname: '/', params: { app: choice } });
-          }
-        } catch (e) {
-          // ignore
+    // Check onboarding status first
+    const initializeApp = async () => {
+      try {
+        const onboardingComplete = await checkOnboardingComplete();
+        if (mounted) {
+          setShowOnboarding(!onboardingComplete);
         }
-      })();
-    }).catch((err: any) => {
-      // Handle auth errors (e.g., invalid refresh token)
-      console.warn('Auth session error:', err?.message);
-      if (mounted) {
-        supabase.auth.signOut();
-        setSession(null);
+      } catch (e) {
+        if (mounted) {
+          setShowOnboarding(false); // Default to not showing if error
+        }
       }
-    });
+
+      // get initial session
+      supabase.auth.getSession().then((res: any) => {
+        if (!mounted) return;
+        // Handle invalid refresh token error
+        if (res?.error?.message?.includes('refresh token')) {
+          console.warn('Invalid refresh token, signing out...');
+          supabase.auth.signOut();
+          setSession(null);
+          setIsLoading(false);
+          return;
+        }
+        setSession(res?.data?.session ?? null);
+        setIsLoading(false);
+        // if a selected app was stored before OAuth, navigate to it
+        (async () => {
+          try {
+            const choice = await AsyncStorage.getItem('selectedApp');
+            if (choice) {
+              await AsyncStorage.removeItem('selectedApp');
+              router.replace({ pathname: '/', params: { app: choice } });
+            }
+          } catch (e) {
+            // ignore
+          }
+        })();
+      }).catch((err: any) => {
+        // Handle auth errors (e.g., invalid refresh token)
+        console.warn('Auth session error:', err?.message);
+        if (mounted) {
+          supabase.auth.signOut();
+          setSession(null);
+          setIsLoading(false);
+        }
+      });
+    };
+
+    initializeApp();
 
     // subscribe to auth changes
-    const { data: { subscription } }: any = supabase.auth.onAuthStateChange((_: any, session: any) => {
+    const { data: { subscription } }: any = supabase.auth.onAuthStateChange(async (_: any, session: any) => {
       setSession(session ?? null);
+      
+      // Re-check onboarding status when auth state changes (for debugging reset)
+      if (!session) {
+        const onboardingComplete = await checkOnboardingComplete();
+        setShowOnboarding(!onboardingComplete);
+      }
+      
       // If we just signed in via OAuth, a selectedApp might be stored; restore it.
       (async () => {
         try {
@@ -79,20 +108,29 @@ export default function TabLayout() {
     };
   }, []);
 
+  // Show loading state while checking onboarding and auth
+  if (isLoading || showOnboarding === null) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAF9' }}>
+        <ActivityIndicator size="large" color="#799FCB" />
+      </View>
+    );
+  }
+
+  // Show onboarding for first-time users
+  if (showOnboarding) {
+    return (
+      <OnboardingScreen
+        onComplete={() => setShowOnboarding(false)}
+      />
+    );
+  }
+
   if (!session) {
     return (
       <AuthScreen
-        onSignedIn={(choice?: any) => supabase.auth.getSession().then((res: any) => {
+        onSignedIn={() => supabase.auth.getSession().then((res: any) => {
           setSession(res?.data?.session ?? null);
-          // navigate to the index tab and include the chosen app as a query param so the index page can show it
-          try {
-            if (choice) {
-              // replace to root index and pass the app choice as a query param
-              router.replace({ pathname: '/', params: { app: choice } });
-            }
-          } catch (e) {
-            // ignore router errors
-          }
         })}
       />
     );
