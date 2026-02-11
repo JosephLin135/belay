@@ -344,7 +344,7 @@ export default function HomeScreen() {
       
       {/* Hero Header Section */}
       <LinearGradient
-        colors={['#799FCB', '#5A7FB0']}
+        colors={['#1e4620', '#449e']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.heroHeader, { paddingTop: insets.top + 16 }]}
@@ -420,7 +420,7 @@ export default function HomeScreen() {
         {/* Routes List */}
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#799FCB" />
+            <ActivityIndicator size="large" color="#1e4620" />
             <Text style={styles.loadingText}>Loading your sends...</Text>
           </View>
         ) : (
@@ -519,7 +519,7 @@ export default function HomeScreen() {
         <View style={styles.betaModalOverlay}>
           <View style={styles.betaModalContent}>
             <LinearGradient
-              colors={['#799FCB', '#5A7FB0']}
+              colors={['#1e4620', '#449e']}
               style={styles.betaModalHeader}
             >
               <Ionicons name="bulb" size={28} color="#FFF" />
@@ -538,7 +538,7 @@ export default function HomeScreen() {
               
               {betaLoading ? (
                 <View style={styles.betaLoadingContainer}>
-                  <ActivityIndicator size="large" color="#799FCB" />
+                  <ActivityIndicator size="large" color="#1e4620" />
                   <Text style={styles.betaLoadingText}>Analyzing your route...</Text>
                 </View>
               ) : betaError ? (
@@ -568,11 +568,11 @@ export default function HomeScreen() {
           <View style={styles.modalCard}>
             {/* Modal Header */}
             <LinearGradient
-              colors={['#799FCB', '#5A7FB0']}
+              colors={['#1e4620', '#449e']}
               style={styles.modalHeaderGradient}
             >
               <View style={styles.modalHeaderIcon}>
-                <Ionicons name={editIndex !== null ? "pencil" : "add-circle"} size={24} color="#799FCB" />
+                <Ionicons name={editIndex !== null ? "pencil" : "add-circle"} size={24} color="#1e4620" />
               </View>
               <Text style={styles.modalHeaderTitle}>
                 {editIndex !== null ? 'Edit Route' : 'Log New Route'}
@@ -622,7 +622,7 @@ export default function HomeScreen() {
                 ) : (
                   <TouchableOpacity style={styles.photoAddButton} onPress={handleImageSelect}>
                     <View style={styles.photoAddIconCircle}>
-                      <Ionicons name="camera-outline" size={28} color="#799FCB" />
+                      <Ionicons name="camera-outline" size={28} color="#1e4620" />
                     </View>
                     <Text style={styles.photoAddText}>Add a photo of the route</Text>
                     <Text style={styles.photoAddHint}>Helps with AI beta suggestions</Text>
@@ -671,7 +671,7 @@ export default function HomeScreen() {
                 activeOpacity={0.8}
               >
                 <LinearGradient
-                  colors={['#799FCB', '#5A7FB0']}
+                  colors={['#1e4620', '#449e']}
                   style={styles.modalSaveGradient}
                 >
                   <Ionicons name="checkmark" size={20} color="#FFF" />
@@ -824,12 +824,12 @@ const styles = StyleSheet.create({
   addButtonNew: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 12,
     gap: 6,
-    shadowColor: '#799FCB',
+    shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -955,10 +955,10 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#799FCB',
+    shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
@@ -1013,13 +1013,13 @@ const styles = StyleSheet.create({
   emptyButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 14,
     marginTop: 24,
     gap: 8,
-    shadowColor: '#799FCB',
+    shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -1216,7 +1216,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginLeft: 16,
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,

@@ -212,7 +212,7 @@ export default function TabTwoScreen(){
       
       {/* Hero Header Section */}
       <LinearGradient
-        colors={['#799FCB', '#5A7FB0']}
+        colors={['#1e4620', '#449e']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.heroHeader, { paddingTop: insets.top + 16 }]}
@@ -371,11 +371,11 @@ export default function TabTwoScreen(){
           <View style={styles.modalCard}>
             {/* Modal Header */}
             <LinearGradient
-              colors={['#799FCB', '#5A7FB0']}
+              colors={['#1e4620', '#449e']}
               style={styles.modalHeaderGradient}
             >
               <View style={styles.modalHeaderIcon}>
-                <Ionicons name={editIndex !== null ? "pencil" : "bulb"} size={24} color="#799FCB" />
+                <Ionicons name={editIndex !== null ? "pencil" : "bulb"} size={24} color="#1e4620" />
               </View>
               <Text style={styles.modalHeaderTitle}>
                 {editIndex !== null ? 'Edit Route Idea' : 'New Route Idea'}
@@ -476,7 +476,7 @@ export default function TabTwoScreen(){
                     }}
                   >
                     <View style={styles.photoAddIconCircle}>
-                      <Ionicons name="image-outline" size={28} color="#799FCB" />
+                      <Ionicons name="image-outline" size={28} color="#1e4620" />
                     </View>
                     <Text style={styles.photoAddText}>Add a reference image</Text>
                     <Text style={styles.photoAddHint}>Optional inspiration photo</Text>
@@ -506,7 +506,7 @@ export default function TabTwoScreen(){
                 activeOpacity={0.8}
               >
                 <LinearGradient
-                  colors={['#799FCB', '#5A7FB0']}
+                  colors={['#1e4620', '#449e']}
                   style={styles.modalSaveGradient}
                 >
                   <Ionicons name="checkmark" size={20} color="#FFF" />
@@ -529,7 +529,7 @@ export default function TabTwoScreen(){
         >
           <View style={styles.enlargedCard}>
             <View style={styles.enlargedHeader}>
-              <Ionicons name="document-text" size={24} color="#799FCB" />
+              <Ionicons name="document-text" size={24} color="#1e4620" />
               <Text style={styles.enlargedTitle}>Description</Text>
             </View>
             <ScrollView style={styles.enlargedScrollView}>
@@ -620,7 +620,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.9)',
   },
   gradeFilterTextActive: {
-    color: '#5A7FB0',
+    color: '#449e',
   },
 
   // Content Container
@@ -650,12 +650,12 @@ const styles = StyleSheet.create({
   addButtonNew: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 12,
     gap: 6,
-    shadowColor: '#799FCB',
+    shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -777,13 +777,13 @@ const styles = StyleSheet.create({
   emptyButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 14,
     marginTop: 24,
     gap: 8,
-    shadowColor: '#799FCB',
+    shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -925,7 +925,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginLeft: 16,
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,

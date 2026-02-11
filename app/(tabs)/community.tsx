@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -56,7 +56,7 @@ interface TopComment {
 
 // Category config
 const CATEGORIES: { key: PostCategory; label: string; icon: string; color: string }[] = [
-  { key: 'general', label: 'General', icon: 'chatbubbles', color: '#799FCB' },
+  { key: 'general', label: 'General', icon: 'chatbubbles', color: '#1e4620' },
   { key: 'gym', label: 'Gym Talk', icon: 'location', color: '#E85D75' },
   { key: 'beta', label: 'Beta Request', icon: 'bulb', color: '#F5A623' },
   { key: 'gear', label: 'Gear', icon: 'construct', color: '#7ED321' },
@@ -91,6 +91,9 @@ export default function CommunityScreen() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
+  const [pendingScrollToComments, setPendingScrollToComments] = useState(false);
+  const [commentsSectionY, setCommentsSectionY] = useState(0);
+  const detailScrollRef = useRef<ScrollView>(null);
   
   // New post form
   const [newPostCategory, setNewPostCategory] = useState<PostCategory>('general');
@@ -311,6 +314,7 @@ export default function CommunityScreen() {
     setSelectedPost(post);
     setShowPostDetailModal(true);
     fetchComments(post.id);
+    setPendingScrollToComments(false);
   };
 
   // Open comments modal (YouTube-style popup)
@@ -318,7 +322,15 @@ export default function CommunityScreen() {
     setSelectedPost(post);
     setShowPostDetailModal(true);
     fetchComments(post.id);
+    setPendingScrollToComments(true);
   };
+
+  useEffect(() => {
+    if (pendingScrollToComments && showPostDetailModal && commentsSectionY > 0) {
+      detailScrollRef.current?.scrollTo({ y: commentsSectionY, animated: false });
+      setPendingScrollToComments(false);
+    }
+  }, [pendingScrollToComments, showPostDetailModal, commentsSectionY]);
 
   // Share post
   const handleSharePost = async (post: Post) => {
@@ -543,7 +555,7 @@ export default function CommunityScreen() {
             }}
           >
             <View style={styles.topCommentHeader}>
-              <Ionicons name="chatbubble" size={12} color="#799FCB" />
+              <Ionicons name="chatbubble" size={12} color="#1e4620" />
               <Text style={styles.topCommentLabel}>Top Reply</Text>
             </View>
             <View style={styles.topCommentContent}>
@@ -569,7 +581,7 @@ export default function CommunityScreen() {
     <View style={styles.container}>
       {/* Hero Header */}
       <LinearGradient
-        colors={['#799FCB', '#5A7FB0']}
+        colors={['#1e4620', '#449e']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.heroHeader, { paddingTop: insets.top + 12 }]}
@@ -582,7 +594,7 @@ export default function CommunityScreen() {
           style={styles.newPostButton}
           onPress={() => setShowNewPostModal(true)}
         >
-          <Ionicons name="add" size={24} color="#799FCB" />
+          <Ionicons name="add" size={24} color="#1e4620" />
         </TouchableOpacity>
       </LinearGradient>
 
@@ -631,7 +643,7 @@ export default function CommunityScreen() {
       {/* Loading State */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#799FCB" />
+          <ActivityIndicator size="large" color="#1e4620" />
           <Text style={styles.loadingText}>Loading discussions...</Text>
         </View>
       ) : (
@@ -642,7 +654,7 @@ export default function CommunityScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.postsList}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#799FCB" />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1e4620" />
           }
           ListEmptyComponent={
             <View style={styles.emptyState}>
@@ -676,13 +688,13 @@ export default function CommunityScreen() {
         >
           <View style={styles.modalCard}>
             <LinearGradient
-              colors={['#799FCB', '#5A7FB0']}
+              colors={['#1e4620', '#449e']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.modalHeader}
             >
               <View style={styles.modalHeaderIcon}>
-                <Ionicons name="create" size={28} color="#799FCB" />
+                <Ionicons name="create" size={28} color="#1e4620" />
               </View>
               <Text style={styles.modalHeaderTitle}>New Post</Text>
               <Text style={styles.modalHeaderSubtitle}>Share with the community</Text>
@@ -780,7 +792,7 @@ export default function CommunityScreen() {
                 disabled={submitting}
               >
                 <LinearGradient
-                  colors={['#799FCB', '#5A7FB0']}
+                  colors={['#1e4620', '#449e']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.modalPostGradient}
@@ -827,7 +839,7 @@ export default function CommunityScreen() {
             {selectedPost && (
               <>
                 {/* Post Content */}
-                <ScrollView style={styles.detailBody}>
+                <ScrollView style={styles.detailBody} ref={detailScrollRef}>
                   <View style={styles.detailPostCard}>
                     {/* User Info */}
                     <View style={styles.postHeader}>
@@ -872,8 +884,8 @@ export default function CommunityScreen() {
                         </Text>
                       </TouchableOpacity>
                       <View style={styles.postAction}>
-                        <Ionicons name="chatbubble" size={18} color="#799FCB" />
-                        <Text style={[styles.postActionText, { color: '#799FCB' }]}>
+                        <Ionicons name="chatbubble" size={18} color="#1e4620" />
+                        <Text style={[styles.postActionText, { color: '#1e4620' }]}>
                           {comments.length} {comments.length === 1 ? 'reply' : 'replies'}
                         </Text>
                       </View>
@@ -881,11 +893,16 @@ export default function CommunityScreen() {
                   </View>
 
                   {/* Comments Section */}
-                  <View style={styles.commentsSection}>
+                  <View
+                    style={styles.commentsSection}
+                    onLayout={(event) => {
+                      setCommentsSectionY(event.nativeEvent.layout.y);
+                    }}
+                  >
                     <Text style={styles.commentsSectionTitle}>Replies</Text>
                     {loadingComments ? (
                       <View style={styles.loadingComments}>
-                        <ActivityIndicator size="small" color="#799FCB" />
+                        <ActivityIndicator size="small" color="#1e4620" />
                         <Text style={styles.loadingCommentsText}>Loading replies...</Text>
                       </View>
                     ) : comments.map(comment => (
@@ -1021,7 +1038,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   categoryPillActive: {
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
   },
   categoryPillText: {
     fontSize: 13,
@@ -1166,7 +1183,7 @@ const styles = StyleSheet.create({
   topCommentLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#799FCB',
+    color: '#1e4620',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -1187,7 +1204,7 @@ const styles = StyleSheet.create({
   viewMoreComments: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#799FCB',
+    color: '#1e4620',
     marginTop: 8,
   },
 
@@ -1220,7 +1237,7 @@ const styles = StyleSheet.create({
   emptyButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 12,
@@ -1527,7 +1544,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     justifyContent: 'center',
     alignItems: 'center',
   },

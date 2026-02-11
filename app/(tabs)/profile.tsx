@@ -148,6 +148,28 @@ export default function ProfileScreen() {
   }, []);
 
   const loadCurrentPlan = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('plan_id')
+          .eq('id', user.id)
+          .single();
+
+        if (profileData?.plan_id) {
+          const plan = getPlanById(profileData.plan_id as PlanId);
+          if (plan) {
+            setCurrentPlan(plan);
+            await savePlanSelection(plan.id);
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      // ignore and fall back to local storage
+    }
+
     const planId = await getSavedPlan();
     if (planId) {
       const plan = getPlanById(planId);
@@ -494,7 +516,7 @@ export default function ProfileScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color="#799FCB" />
+        <ActivityIndicator size="large" color="#1e4620" />
         <Text style={styles.loadingText}>Loading profile...</Text>
       </View>
     );
@@ -504,7 +526,7 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       {/* Hero Header - Made taller */}
       <LinearGradient
-        colors={['#799FCB', '#5A7FB0']}
+        colors={['#1e4620', '#449e']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.heroHeader, { paddingTop: insets.top + 12 }]}
@@ -637,7 +659,7 @@ export default function ProfileScreen() {
             {/* Current gyms list */}
             {homeGyms.map((gym, index) => (
               <View key={index} style={styles.gymChip}>
-                <Ionicons name="location" size={16} color="#799FCB" />
+                <Ionicons name="location" size={16} color="#1e4620" />
                 <Text style={styles.gymChipText} numberOfLines={1}>{gym}</Text>
                 <TouchableOpacity onPress={() => removeHomeGym(index)}>
                   <Ionicons name="close-circle" size={20} color="#94A3B8" />
@@ -651,7 +673,7 @@ export default function ProfileScreen() {
                 style={styles.addGymButton}
                 onPress={() => setShowGymSearch(true)}
               >
-                <Ionicons name="add-circle-outline" size={20} color="#799FCB" />
+                <Ionicons name="add-circle-outline" size={20} color="#1e4620" />
                 <Text style={styles.addGymButtonText}>Add a gym</Text>
               </TouchableOpacity>
             )}
@@ -796,7 +818,7 @@ export default function ProfileScreen() {
           disabled={saving}
         >
           <LinearGradient
-            colors={['#799FCB', '#5A7FB0']}
+            colors={['#1e4620', '#449e']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.saveButtonGradient}
@@ -1022,7 +1044,7 @@ export default function ProfileScreen() {
                   onPress={() => addHomeGym(gym)}
                 >
                   <View style={styles.gymSuggestionIcon}>
-                    <Ionicons name="location" size={20} color="#799FCB" />
+                    <Ionicons name="location" size={20} color="#1e4620" />
                   </View>
                   <View style={styles.gymSuggestionInfo}>
                     <Text style={styles.gymSuggestionName}>{gym.name}</Text>
@@ -1038,7 +1060,7 @@ export default function ProfileScreen() {
                     style={styles.addCustomGymButton}
                     onPress={() => addHomeGym(gymSearchQuery)}
                   >
-                    <Ionicons name="add-circle" size={20} color="#799FCB" />
+                    <Ionicons name="add-circle" size={20} color="#1e4620" />
                     <Text style={styles.addCustomGymText}>Add "{gymSearchQuery}" as custom gym</Text>
                   </TouchableOpacity>
                 </View>
@@ -1134,7 +1156,7 @@ const styles = StyleSheet.create({
     width: 90,
     height: 90,
     borderRadius: 45,
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
@@ -1154,7 +1176,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -1271,7 +1293,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   gradeOptionSelected: {
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
   },
   gradeOptionText: {
     fontSize: 14,
@@ -1369,7 +1391,7 @@ const styles = StyleSheet.create({
   },
   addGymButtonText: {
     fontSize: 14,
-    color: '#799FCB',
+    color: '#1e4620',
     fontWeight: '600',
   },
 
@@ -1388,7 +1410,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   styleChipSelected: {
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
   },
   styleChipText: {
     fontSize: 13,
@@ -1422,7 +1444,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   lookingForChipSelected: {
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
   },
   lookingForChipText: {
     fontSize: 13,
@@ -1529,7 +1551,7 @@ const styles = StyleSheet.create({
   },
   addCustomGymText: {
     fontSize: 14,
-    color: '#799FCB',
+    color: '#1e4620',
     fontWeight: '600',
   },
   gymSearchHint: {

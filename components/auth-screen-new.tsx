@@ -11,10 +11,10 @@ import {
   Dimensions,
   Platform,
   StatusBar,
-  ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Svg, Path, Circle, Defs, LinearGradient, Stop, G } from 'react-native-svg';
+import { Svg, Path } from 'react-native-svg';
 import { Linking } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
@@ -26,114 +26,18 @@ WebBrowser.maybeCompleteAuthSession();
 
 const { width, height } = Dimensions.get('window');
 
-// Animated background with climbing-themed elements
-const AnimatedBackground = () => {
-  const pulseAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 3000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 0,
-          duration: 3000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
-
-  return (
-    <View style={StyleSheet.absoluteFill}>
-      <Svg height="100%" width="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
-        <Defs>
-          <LinearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor="#FAFAF9" stopOpacity="1" />
-            <Stop offset="0.5" stopColor="#F1F5F9" stopOpacity="1" />
-            <Stop offset="1" stopColor="#E0E7FF" stopOpacity="0.3" />
-          </LinearGradient>
-        </Defs>
-        <Path d="M0 0 H100 V100 H0 Z" fill="url(#bgGrad)" />
-        
-        {/* Abstract climbing holds pattern */}
-        <Circle cx="10" cy="20" r="8" fill="#799FCB" opacity="0.08" />
-        <Circle cx="90" cy="15" r="12" fill="#799FCB" opacity="0.06" />
-        <Circle cx="85" cy="85" r="15" fill="#8B5CF6" opacity="0.05" />
-        <Circle cx="15" cy="75" r="10" fill="#34D399" opacity="0.06" />
-        
-        {/* Flowing lines like rope */}
-        <Path
-          d="M0 60 Q 25 40, 50 60 T 100 50"
-          fill="none"
-          stroke="#799FCB"
-          strokeWidth="0.3"
-          opacity="0.15"
-        />
-        <Path
-          d="M0 80 Q 30 70, 60 80 T 100 75"
-          fill="none"
-          stroke="#8B5CF6"
-          strokeWidth="0.25"
-          opacity="0.1"
-        />
-      </Svg>
-      
-      {/* Animated glow */}
-      <Animated.View
-        style={[
-          styles.glowOrb,
-          {
-            opacity: pulseAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0.1, 0.25],
-            }),
-            transform: [
-              {
-                scale: pulseAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [1, 1.2],
-                }),
-              },
-            ],
-          },
-        ]}
-      />
-    </View>
-  );
-};
 
 // Welcome hero section
-const WelcomeHero = ({ fadeAnim }: { fadeAnim: Animated.Value }) => (
-  <Animated.View
-    style={[
-      styles.heroContainer,
-      {
-        opacity: fadeAnim,
-        transform: [
-          {
-            translateY: fadeAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [-30, 0],
-            }),
-          },
-        ],
-      },
-    ]}
-  >
-    
+const WelcomeHero = () => (
+  <View style={styles.heroContainer}>
     <ThemedText style={styles.brandName}>CRUXLY</ThemedText>
-  </Animated.View>
+    <ThemedText style={styles.tagline}>Find your crew. Climb higher.</ThemedText>
+  </View>
 );
 
 export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
   const emailInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
-  const scrollRef = useRef<ScrollView>(null);
-  
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -143,35 +47,39 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
   const [message, setMessage] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const formAnim = useRef(new Animated.Value(0)).current;
-  const modeAnim = useRef(new Animated.Value(0)).current;
+  const modeAnim = useRef(new Animated.Value(mode === 'signup' ? 1 : 0)).current;
+  const nameFieldAnim = useRef(new Animated.Value(mode === 'signup' ? 1 : 0)).current;
+
+  const ensureProfile = async (user: any) => {
+    if (!user?.id) return;
+
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', user.id)
+      .single();
+
+    if (!profileData && profileError?.code !== 'PGRST116') {
+      throw profileError;
+    }
+
+    if (!profileData) {
+      const { error: upsertError } = await supabase.from('profiles').upsert({
+        id: user.id,
+        display_name: user.user_metadata?.full_name || user.user_metadata?.name || fullName || 'Climber',
+        plan_id: 'free',
+        plan_status: 'active',
+        plan_updated_at: new Date().toISOString(),
+      });
+
+      if (upsertError) throw upsertError;
+    }
+  };
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 800,
-      useNativeDriver: true,
-    }).start();
-  }, []);
-
-  useEffect(() => {
-    Animated.spring(modeAnim, {
-      toValue: mode === 'signup' ? 1 : 0,
-      useNativeDriver: false,
-      friction: 8,
-      tension: 40,
-    }).start();
-  }, [mode]);
-
-  useEffect(() => {
-    Animated.spring(formAnim, {
-      toValue: showForm ? 1 : 0,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 40,
-    }).start();
-  }, [showForm]);
+    modeAnim.setValue(mode === 'signup' ? 1 : 0);
+    nameFieldAnim.setValue(mode === 'signup' ? 1 : 0);
+  }, [mode, nameFieldAnim]);
 
   async function handleSubmit() {
     setMessage(null);
@@ -184,11 +92,13 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
           options: { data: { full_name: fullName } },
         });
         if (res?.error) throw res.error;
+        await ensureProfile(res?.data?.user);
         setMessage('Welcome aboard! Check your email to confirm.');
         onSignedIn?.();
       } else {
         const res: any = await supabase.auth.signInWithPassword({ email, password });
         if (res?.error) throw res.error;
+        await ensureProfile(res?.data?.user);
         setMessage('Welcome back!');
         onSignedIn?.();
       }
@@ -238,6 +148,8 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
               access_token: accessToken,
               refresh_token: refreshToken,
             });
+            const { data: { user } } = await supabase.auth.getUser();
+            await ensureProfile(user);
             setMessage('Welcome!');
             onSignedIn?.();
           } catch (err: any) {
@@ -246,6 +158,8 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
         } else {
           const { data } = await supabase.auth.getSession();
           if (data?.session) {
+            const { data: { user } } = await supabase.auth.getUser();
+            await ensureProfile(user);
             setMessage('Welcome!');
             onSignedIn?.();
           }
@@ -267,30 +181,13 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
     }
   }
 
-  const handleGetStarted = () => {
+  const handleGetStarted = (nextMode: 'signin' | 'signup' = 'signup') => {
+    setMode(nextMode);
     setShowForm(true);
-    setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }, 100);
   };
 
   const renderAuthForm = () => (
-    <Animated.View
-      style={[
-        styles.formCard,
-        {
-          opacity: formAnim,
-          transform: [
-            {
-              translateY: formAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [100, 0],
-              }),
-            },
-          ],
-        },
-      ]}
-    >
+    <View style={styles.formCard}>
       {/* Mode Toggle */}
       <View style={styles.modeToggle}>
         <Animated.View
@@ -324,17 +221,23 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
       <View style={styles.inputsContainer}>
         {/* Name field - only for signup */}
         <Animated.View
+          pointerEvents={mode === 'signup' ? 'auto' : 'none'}
           style={{
             overflow: 'hidden',
-            height: modeAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 64] }),
-            opacity: modeAnim,
-            marginBottom: modeAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 12] }),
+            height: nameFieldAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 64] }),
+            opacity: nameFieldAnim,
+            marginBottom: nameFieldAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 12] }),
+            transform: [
+              {
+                translateY: nameFieldAnim.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }),
+              },
+            ],
           }}
         >
           <View style={styles.inputWrapper}>
             <Ionicons name="person-outline" size={20} color="#64748b" style={styles.inputIcon} />
             <TextInput
-              placeholder="Your name"
+              placeholder="Full name"
               placeholderTextColor="#94A3B8"
               value={fullName}
               onChangeText={setFullName}
@@ -447,59 +350,36 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
       <ThemedText style={styles.termsText}>
         By continuing, you agree to our Terms of Service and Privacy Policy
       </ThemedText>
-    </Animated.View>
+    </View>
   );
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <AnimatedBackground />
 
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <ScrollView
-          ref={scrollRef}
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+        <KeyboardAvoidingView
+          style={styles.keyboardContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <SafeAreaView style={styles.safeArea}>
-            <WelcomeHero fadeAnim={fadeAnim} />
+            <WelcomeHero />
 
             {/* Get Started Buttons - show when form is hidden */}
             {!showForm && (
-              <Animated.View
-                style={[
-                  styles.ctaContainer,
-                  {
-                    opacity: fadeAnim,
-                    transform: [
-                      {
-                        translateY: fadeAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [50, 0],
-                        }),
-                      },
-                    ],
-                  },
-                ]}
-              >
-                <TouchableOpacity style={styles.primaryCta} onPress={handleGetStarted}>
+              <View style={styles.ctaContainer}>
+                <TouchableOpacity style={styles.primaryCta} onPress={() => handleGetStarted('signup')}>
                   <ThemedText style={styles.primaryCtaText}>Get Started</ThemedText>
                   <Ionicons name="arrow-forward" size={20} color="#FFF" />
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.secondaryCta}
-                  onPress={() => {
-                    setMode('signin');
-                    handleGetStarted();
-                  }}
+                  onPress={() => handleGetStarted('signin')}
                 >
                   <ThemedText style={styles.secondaryCtaText}>I already have an account</ThemedText>
                 </TouchableOpacity>
-
-              </Animated.View>
+              </View>
             )}
 
             {/* Auth Form - show when user clicks Get Started */}
@@ -508,12 +388,12 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
             {/* Back button when form is shown */}
             {showForm && (
               <TouchableOpacity style={styles.backButton} onPress={() => setShowForm(false)}>
-                <Ionicons name="chevron-back" size={20} color="#64748B" />
+                <Ionicons name="chevron-back" size={20} color="#1e4620" />
                 <ThemedText style={styles.backButtonText}>Back</ThemedText>
               </TouchableOpacity>
             )}
           </SafeAreaView>
-        </ScrollView>
+        </KeyboardAvoidingView>
       </TouchableWithoutFeedback>
     </View>
   );
@@ -522,35 +402,24 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAFAF9',
+    backgroundColor: '#e7f1e7',
   },
-  scrollView: {
+  keyboardContainer: {
     flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
   },
   safeArea: {
     flex: 1,
     paddingHorizontal: 24,
   },
-  glowOrb: {
-    position: 'absolute',
-    top: -100,
-    right: -50,
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: '#799FCB',
-  },
   heroContainer: {
     alignItems: 'center',
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 32,
+    paddingTop: 100,
+    paddingBottom: 6,
   },
   logoContainer: {
     position: 'relative',
-    marginBottom: 20,
+    marginBottom: 10,
   },
   logoInner: {
     width: 80,
@@ -559,7 +428,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#799FCB',
+    shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 20,
@@ -573,18 +442,18 @@ const styles = StyleSheet.create({
     bottom: -8,
     borderRadius: 32,
     borderWidth: 2,
-    borderColor: 'rgba(121, 159, 203, 0.2)',
+    borderColor: 'rgba(30, 70, 32, 0.2)',
   },
   brandName: {
     fontSize: 25,
     fontWeight: '900',
-    color: '#1E293B',
-    letterSpacing: 2,
-    marginBottom: 8,
+    color: '#1e4620',
+    letterSpacing: 3,
+    marginTop: 10,
   },
   tagline: {
     fontSize: 16,
-    color: '#64748B',
+    color: '#2f3b2f',
     marginBottom: 24,
   },
   featurePills: {
@@ -596,17 +465,17 @@ const styles = StyleSheet.create({
   featurePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(255,255,255,0.9)',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
     gap: 6,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: 'rgba(30, 70, 32, 0.2)',
   },
   featurePillText: {
     fontSize: 12,
-    color: '#64748B',
+    color: '#2f3b2f',
     fontWeight: '600',
   },
   ctaContainer: {
@@ -619,11 +488,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#799FCB',
-    height: 60,
+    backgroundColor: '#1e4620',
+    height: 50,
     borderRadius: 16,
     gap: 8,
-    shadowColor: '#799FCB',
+    shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
     shadowRadius: 16,
@@ -640,7 +509,7 @@ const styles = StyleSheet.create({
     height: 50,
   },
   secondaryCtaText: {
-    color: '#64748B',
+    color: '#2f3b2f',
     fontSize: 15,
     fontWeight: '600',
   },
@@ -658,7 +527,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -669,40 +538,41 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   formCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 28,
-    padding: 24,
-    marginTop: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.08,
-    shadowRadius: 24,
-    elevation: 8,
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    paddingHorizontal: 0,
+    paddingTop: 8,
+    paddingBottom: 12,
+    marginTop: 8,
+    marginBottom: 20,
+    borderWidth: 0,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   modeToggle: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    height: 48,
-    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    height: 52,
+    borderRadius: 26,
     marginBottom: 24,
     position: 'relative',
-    padding: 3,
+    padding: 4,
     overflow: 'hidden',
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(30, 70, 32, 0.25)',
   },
   modeIndicator: {
     position: 'absolute',
-    top: 3,
-    bottom: 3,
+    top: 4,
+    bottom: 4,
     width: '50%',
-    backgroundColor: '#799FCB',
-    borderRadius: 22,
-    shadowColor: '#799FCB',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
+    backgroundColor: '#2f6b3a',
+    borderRadius: 24,
+    shadowColor: '#1e4620',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
   },
   modeBtn: {
     flex: 1,
@@ -711,24 +581,25 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   modeText: {
-    color: '#64748B',
-    fontWeight: '600',
-    fontSize: 15,
+    color: '#1e4620',
+    fontWeight: '700',
+    fontSize: 14,
+    letterSpacing: 0.3,
   },
   modeTextActive: {
     color: '#fff',
     fontWeight: '700',
   },
   inputsContainer: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: 'rgba(30, 70, 32, 0.2)',
     marginBottom: 12,
     paddingHorizontal: 16,
     height: 56,
@@ -746,12 +617,12 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   submitBtn: {
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     height: 56,
-    borderRadius: 14,
+    borderRadius: 999,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#799FCB',
+    shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -795,7 +666,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
   },
   dividerText: {
-    color: '#94A3B8',
+    color: '#6b7a6b',
     fontSize: 13,
     marginHorizontal: 16,
     fontWeight: '500',
@@ -804,11 +675,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
     height: 56,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: 'rgba(30, 70, 32, 0.2)',
     gap: 10,
   },
   googleBtnText: {
@@ -818,7 +689,7 @@ const styles = StyleSheet.create({
   },
   termsText: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: '#6b7a6b',
     textAlign: 'center',
     marginTop: 20,
     lineHeight: 18,
@@ -831,7 +702,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   backButtonText: {
-    color: '#64748B',
+    color: '#2f3b2f',
     fontSize: 15,
     fontWeight: '600',
   },

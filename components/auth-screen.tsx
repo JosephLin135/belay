@@ -30,14 +30,14 @@ const TopoBackground = () => (
       <Path
         d="M0 70 Q 20 50, 40 65 T 80 55 T 100 60"
         fill="none"
-        stroke="#799FCB"
+        stroke="#1e4620"
         strokeWidth="0.4"
         opacity="0.2"
       />
       <Path
         d="M0 80 Q 30 60, 60 75 T 100 70"
         fill="none"
-        stroke="#799FCB"
+        stroke="#1e4620"
         strokeWidth="0.3"
         opacity="0.15"
       />
@@ -55,7 +55,7 @@ const TopoBackground = () => (
         strokeWidth="0.25"
         opacity="0.08"
       />
-      <Circle cx="85" cy="15" r="20" fill="#799FCB" opacity="0.06" />
+      <Circle cx="85" cy="15" r="20" fill="#1e4620" opacity="0.06" />
       <Circle cx="10" cy="85" r="30" fill="#2D4A5E" opacity="0.04" />
     </Svg>
   </View>
@@ -310,7 +310,7 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
             </TouchableOpacity>
             {message ? (
               <View style={styles.messageBox}>
-                <Ionicons name="information-circle" size={16} color="#799FCB" />
+                <Ionicons name="information-circle" size={16} color="#1e4620" />
                 <ThemedText style={styles.messageText}>{message}</ThemedText>
               </View>
             ) : null}
@@ -426,7 +426,7 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
               </TouchableOpacity>
               {message ? (
                 <View style={styles.messageBox}>
-                  <Ionicons name="information-circle" size={16} color="#799FCB" />
+                  <Ionicons name="information-circle" size={16} color="#1e4620" />
                   <ThemedText style={styles.messageText}>{message}</ThemedText>
                 </View>
               ) : null}
@@ -487,7 +487,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(121, 159, 203, 0.08)',
     borderWidth: 1.5,
     borderColor: 'rgba(121, 159, 203, 0.15)',
-    shadowColor: '#799FCB',
+    shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
@@ -495,7 +495,7 @@ const styles = StyleSheet.create({
   header: {
     fontSize: 25,
     fontWeight: '800',
-    color: '#799FCB',
+    color: '#1e4620',
   },
   tag: {
     fontSize: 14,
@@ -530,9 +530,9 @@ const styles = StyleSheet.create({
     top: 3,
     bottom: 3,
     width: '50%',
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     borderRadius: 22,
-    shadowColor: '#799FCB',
+    shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
     shadowRadius: 6,
@@ -579,12 +579,12 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   submitBtn: {
-    backgroundColor: '#799FCB',
+    backgroundColor: '#1e4620',
     height: 58,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#799FCB',
+    shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

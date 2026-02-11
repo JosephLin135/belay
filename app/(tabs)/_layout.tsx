@@ -112,17 +112,8 @@ export default function TabLayout() {
   if (isLoading || showOnboarding === null) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAF9' }}>
-        <ActivityIndicator size="large" color="#799FCB" />
+        <ActivityIndicator size="large" color="#1e4620" />
       </View>
-    );
-  }
-
-  // Show onboarding for first-time users
-  if (showOnboarding) {
-    return (
-      <OnboardingScreen
-        onComplete={() => setShowOnboarding(false)}
-      />
     );
   }
 
@@ -136,10 +127,19 @@ export default function TabLayout() {
     );
   }
 
+  // Show onboarding after sign-in
+  if (showOnboarding) {
+    return (
+      <OnboardingScreen
+        onComplete={() => setShowOnboarding(false)}
+      />
+    );
+  }
+
   return (
     <Tabs
       screenOptions={({ route }) => ({
-        tabBarActiveTintColor: '#799FCB',
+        tabBarActiveTintColor: '#1e4620',
         tabBarInactiveTintColor: colorScheme === 'dark' ? '#64748B' : '#94A3B8',
         headerShown: false,
         tabBarButton: HapticTab,

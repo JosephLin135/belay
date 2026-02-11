@@ -9,13 +9,15 @@ import {
   Dimensions,
   Platform,
   ActivityIndicator,
-  Linking,
   Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
+import { supabase } from '@/lib/supabase';
 
 const { width, height } = Dimensions.get('window');
 
@@ -123,6 +125,73 @@ export function MembershipScreen({ visible, selectedPlan, onClose, onConfirm }: 
   const [agreed, setAgreed] = useState(false);
   const [processing, setProcessing] = useState(false);
 
+  WebBrowser.maybeCompleteAuthSession();
+
+  const extractSessionId = (url?: string | null) => {
+    if (!url) return null;
+    const sessionParam = url.split('session_id=')[1];
+    if (!sessionParam) return null;
+    return sessionParam.split('&')[0];
+  };
+
+  const updatePlanInProfile = async (planId: PlanId, status: 'active' | 'pending' | 'canceled') => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('You must be signed in to update your plan.');
+
+    const { error } = await supabase
+      .from('profiles')
+      .upsert({
+        id: user.id,
+        plan_id: planId,
+        plan_status: status,
+        plan_updated_at: new Date().toISOString(),
+      });
+
+    if (error) throw error;
+  };
+
+  const startPaidCheckout = async () => {
+    if (!selectedPlan.stripePriceId) {
+      throw new Error('Stripe price is missing for this plan.');
+    }
+
+    const redirectUrl = AuthSession.makeRedirectUri({ scheme: 'belay' });
+
+    const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+      body: {
+        priceId: selectedPlan.stripePriceId,
+        planId: selectedPlan.id,
+        redirectUrl,
+      },
+    });
+
+    if (error) throw error;
+
+    const checkoutUrl = data?.url as string | undefined;
+    if (!checkoutUrl) throw new Error('Failed to create Stripe checkout session.');
+
+    const result = await WebBrowser.openAuthSessionAsync(checkoutUrl, redirectUrl);
+    if (result.type !== 'success') {
+      throw new Error('Checkout was canceled.');
+    }
+
+    const sessionId = extractSessionId(result.url);
+    if (!sessionId) throw new Error('Missing Stripe session ID.');
+
+    const { data: finalizeData, error: finalizeError } = await supabase.functions.invoke(
+      'finalize-checkout-session',
+      { body: { sessionId } }
+    );
+
+    if (finalizeError) throw finalizeError;
+
+    const planId = (finalizeData?.planId as PlanId) || selectedPlan.id;
+    const plan = getPlanById(planId) || selectedPlan;
+
+    await savePlanSelection(plan.id);
+    onConfirm(plan);
+  };
+
   const handleConfirm = async () => {
     if (selectedPlan.id !== 'free' && !agreed) {
       Alert.alert('Terms Required', 'Please agree to the terms and conditions to continue.');
@@ -135,63 +204,17 @@ export function MembershipScreen({ visible, selectedPlan, onClose, onConfirm }: 
       if (selectedPlan.id === 'free') {
         // Free plan - just save and continue
         await savePlanSelection(selectedPlan.id);
+        await updatePlanInProfile(selectedPlan.id, 'active');
         onConfirm(selectedPlan);
       } else {
-        // Paid plan - would integrate with Stripe here
-        // For now, simulate the process
-        await simulatePayment(selectedPlan);
-        await savePlanSelection(selectedPlan.id);
-        onConfirm(selectedPlan);
+        await updatePlanInProfile(selectedPlan.id, 'pending');
+        await startPaidCheckout();
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Something went wrong. Please try again.');
     } finally {
       setProcessing(false);
     }
-  };
-
-  const simulatePayment = async (plan: Plan): Promise<void> => {
-    // In production, this would:
-    // 1. Create a Stripe Checkout session via your backend
-    // 2. Open the Stripe payment page
-    // 3. Handle the callback/redirect
-    // 4. Verify the payment on your backend
-    // 5. Update the user's subscription status in Supabase
-
-    // For demo purposes, we'll just simulate a delay
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, 1500);
-    });
-  };
-
-  const openStripePayment = async () => {
-    // In production, you would:
-    // 1. Call your backend to create a Stripe Checkout session
-    // 2. Get the checkout URL
-    // 3. Open it with Linking.openURL()
-    
-    // Example:
-    // const response = await fetch('YOUR_BACKEND_URL/create-checkout-session', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ 
-    //     priceId: selectedPlan.stripePriceId,
-    //     userId: currentUserId,
-    //   }),
-    // });
-    // const { url } = await response.json();
-    // await Linking.openURL(url);
-
-    Alert.alert(
-      'Stripe Integration',
-      'In production, this would open Stripe Checkout for secure payment processing.\n\nFor demo purposes, we\'ll simulate a successful payment.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Simulate Payment', onPress: handleConfirm },
-      ]
-    );
   };
 
   return (
@@ -356,7 +379,7 @@ export function MembershipScreen({ visible, selectedPlan, onClose, onConfirm }: 
           ) : (
             <TouchableOpacity
               style={[styles.confirmButton, (!agreed || processing) && styles.confirmButtonDisabled]}
-              onPress={openStripePayment}
+              onPress={handleConfirm}
               disabled={!agreed || processing}
             >
               <LinearGradient

@@ -6,8 +6,8 @@
 import { Platform } from 'react-native';
 
 // Climbing-inspired color palette
-const tintColorLight = '#799FCB'; // Calm slate blue
-const tintColorDark = '#A3BFDE';
+const tintColorLight = '#1e4620'; // Calm slate blue
+const tintColorDark = '#449e';
 
 export const Colors = {
   light: {
@@ -18,8 +18,8 @@ export const Colors = {
     tabIconDefault: '#94A3B8',
     tabIconSelected: tintColorLight,
     // Extended climbing palette
-    primary: '#799FCB',
-    primaryDark: '#5A7FB0',
+    primary: '#1e4620',
+    primaryDark: '#449e',
     secondary: '#2D4A5E',
     accent: '#34D399',
     surface: '#FFFFFF',
@@ -38,9 +38,9 @@ export const Colors = {
     tabIconDefault: '#64748B',
     tabIconSelected: tintColorDark,
     // Extended climbing palette
-    primary: '#A3BFDE',
-    primaryDark: '#799FCB',
-    secondary: '#5EADD4',
+    primary: '#449e',
+    primaryDark: '#1e4620',
+    secondary: '#449e',
     accent: '#34D399',
     surface: '#1E293B',
     surfaceAlt: '#334155',
