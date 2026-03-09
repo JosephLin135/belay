@@ -21,7 +21,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import * as FileSystem from 'expo-file-system/legacy';
-import { resetOnboarding } from '@/components/onboarding-screen';
+import { resetOnboarding } from '@/components/onboarding-flow';
+import { setSkipToAuthOnSignOut } from '@/app/(tabs)/_layout';
 import { 
   getSavedPlan, 
   savePlanSelection, 
@@ -108,6 +109,14 @@ const CLIMBING_GYMS: GymSuggestion[] = [
   { id: '14', name: 'Central Rock Gym', address: '299 Barber Ave', city: 'Worcester, MA' },
   { id: '15', name: 'MetroRock', address: '69 Norman St', city: 'Everett, MA' },
 ];
+
+function isSupabaseStub(supabase: any) {
+  return (
+    !supabase ||
+    typeof supabase.auth?.signUp !== 'function' ||
+    (supabase.auth.signUp.toString().includes('Supabase client not initialized'))
+  );
+}
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -285,29 +294,61 @@ export default function ProfileScreen() {
 
     setSaving(true);
     try {
-      const { error } = await supabase
+      // First check if profile exists
+      const { data: existingProfile } = await supabase
         .from('profiles')
-        .upsert({
-          id: user.id,
-          display_name: displayName.trim(),
-          name: name.trim() || null,
-          avatar_url: avatarUrl,
-          bio: bio.trim() || null,
-          home_gym: homeGyms.length > 0 ? homeGyms : null,
-          climbing_since: climbingSince.trim() || null,
-          max_grade: maxGrade || null,
-          preferred_style: preferredStyle || null,
-          instagram_handle: instagramHandle.trim() || null,
-          looking_for: lookingFor.length > 0 ? lookingFor : null,
-          updated_at: new Date().toISOString(),
-        });
+        .select('id')
+        .eq('id', user.id)
+        .single();
+
+      let error;
+      
+      if (existingProfile) {
+        // Update existing profile
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            display_name: displayName.trim(),
+            name: name.trim() || null,
+            avatar_url: avatarUrl,
+            bio: bio.trim() || null,
+            home_gym: homeGyms.length > 0 ? homeGyms : null,
+            climbing_since: climbingSince.trim() || null,
+            max_grade: maxGrade || null,
+            preferred_style: preferredStyle || null,
+            instagram_handle: instagramHandle.trim() || null,
+            looking_for: lookingFor.length > 0 ? lookingFor : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', user.id);
+        error = updateError;
+      } else {
+        // Insert new profile
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            display_name: displayName.trim(),
+            name: name.trim() || null,
+            avatar_url: avatarUrl,
+            bio: bio.trim() || null,
+            home_gym: homeGyms.length > 0 ? homeGyms : null,
+            climbing_since: climbingSince.trim() || null,
+            max_grade: maxGrade || null,
+            preferred_style: preferredStyle || null,
+            instagram_handle: instagramHandle.trim() || null,
+            looking_for: lookingFor.length > 0 ? lookingFor : null,
+            updated_at: new Date().toISOString(),
+          });
+        error = insertError;
+      }
 
       if (error) throw error;
 
       Alert.alert('Success', 'Profile updated successfully!');
     } catch (error: any) {
       console.error('Error saving profile:', error.message);
-      Alert.alert('Error', 'Failed to save profile. Please try again.');
+      Alert.alert('Error', `Failed to save profile: ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -323,7 +364,22 @@ export default function ProfileScreen() {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
-            await supabase.auth.signOut();
+            try {
+              console.log('Starting sign out...');
+              // Set flag to skip intro slides and go directly to login
+              await setSkipToAuthOnSignOut();
+              console.log('Skip flag set');
+              // Sign out from Supabase
+              const { error } = await supabase.auth.signOut();
+              console.log('Sign out complete, error:', error);
+              if (error) {
+                console.error('Sign out error:', error);
+                Alert.alert('Error', 'Failed to sign out. Please try again.');
+              }
+            } catch (e) {
+              console.error('Sign out exception:', e);
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
           },
         },
       ]
@@ -512,6 +568,17 @@ export default function ProfileScreen() {
       setLookingFor([...lookingFor, key]);
     }
   };
+
+
+  if (isSupabaseStub(supabase)) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <Text style={styles.loadingText}>
+          Error: Supabase client is not initialized. Please check your .env and restart Expo.
+        </Text>
+      </View>
+    );
+  }
 
   if (loading) {
     return (

@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   slideTitle: {
-    fontSize: 40,
+    fontSize: 25,
     fontWeight: '800',
     color: '#1E293B',
     textAlign: 'center',

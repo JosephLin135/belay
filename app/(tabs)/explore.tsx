@@ -642,6 +642,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  sectionEmoji: {
+    fontSize: 20,
+  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '700',
@@ -653,7 +656,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e4620',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 20,
     gap: 6,
     shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 4 },
@@ -763,8 +766,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#1E293B',
     marginBottom: 8,
   },
@@ -772,7 +775,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 24,
   },
   emptyButton: {
     flexDirection: 'row',
@@ -780,7 +783,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e4620',
     paddingHorizontal: 24,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: 24,
     marginTop: 24,
     gap: 8,
     shadowColor: '#1e4620',

@@ -198,7 +198,7 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
                 {
                   translateX: modeAnim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [2, (width - 80) / 2 - 2],
+                    outputRange: [0, (width - 64 - 8) / 2],
                   }),
                 },
               ],
@@ -348,7 +348,7 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
 
       {/* Terms */}
       <ThemedText style={styles.termsText}>
-        By continuing, you agree to our Terms of Service and Privacy Policy
+        By signing up, you agree to our Terms of Service and Privacy Policy
       </ThemedText>
     </View>
   );
@@ -414,7 +414,6 @@ const styles = StyleSheet.create({
   heroContainer: {
     alignItems: 'center',
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingTop: 100,
     paddingBottom: 6,
   },
   logoContainer: {
@@ -449,7 +448,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#1e4620',
     letterSpacing: 3,
-    marginTop: 10,
+    marginTop: 80,
   },
   tagline: {
     fontSize: 16,
@@ -481,7 +480,7 @@ const styles = StyleSheet.create({
   ctaContainer: {
     flex: 1,
     justifyContent: 'center',
-    paddingBottom: 40,
+    paddingBottom: 100,
     gap: 16,
   },
   primaryCta: {
@@ -542,7 +541,7 @@ const styles = StyleSheet.create({
     borderRadius: 0,
     paddingHorizontal: 0,
     paddingTop: 8,
-    paddingBottom: 12,
+    paddingBottom: 5,
     marginTop: 8,
     marginBottom: 20,
     borderWidth: 0,
@@ -559,26 +558,25 @@ const styles = StyleSheet.create({
     padding: 4,
     overflow: 'hidden',
     borderWidth: 2,
-    borderStyle: 'dashed',
     borderColor: 'rgba(30, 70, 32, 0.25)',
   },
   modeIndicator: {
     position: 'absolute',
     top: 4,
     bottom: 4,
-    width: '50%',
+    left: 4,
+    width: (width - 50) / 2,
     backgroundColor: '#2f6b3a',
-    borderRadius: 24,
+    borderRadius: 22,
     shadowColor: '#1e4620',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.18,
     shadowRadius: 4,
   },
   modeBtn: {
-    flex: 1,
+    flex: 2,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 1,
   },
   modeText: {
     color: '#1e4620',
@@ -688,17 +686,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   termsText: {
-    fontSize: 12,
+    fontSize: 8,
     color: '#6b7a6b',
     textAlign: 'center',
-    marginTop: 20,
+    marginTop: 12,
     lineHeight: 18,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    paddingVertical: 12,
     gap: 4,
   },
   backButtonText: {

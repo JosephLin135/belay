@@ -105,6 +105,15 @@ export default function CommunityScreen() {
   // New comment
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+  
+  // Edit states
+  const [editingPost, setEditingPost] = useState<Post | null>(null);
+  const [editPostTitle, setEditPostTitle] = useState('');
+  const [editPostContent, setEditPostContent] = useState('');
+  const [showEditPostModal, setShowEditPostModal] = useState(false);
+  const [editingComment, setEditingComment] = useState<Comment | null>(null);
+  const [editCommentContent, setEditCommentContent] = useState('');
+  const [showEditCommentModal, setShowEditCommentModal] = useState(false);
 
   // Get current user on mount
   useEffect(() => {
@@ -113,6 +122,9 @@ export default function CommunityScreen() {
       setCurrentUserId(user?.id || null);
     };
     getCurrentUser();
+    
+    // Start fetching posts immediately, don't wait for user
+    fetchPosts();
   }, []);
 
   // Fetch posts from Supabase
@@ -122,17 +134,24 @@ export default function CommunityScreen() {
       const { data: postsData, error: postsError } = await supabase
         .from('community_posts_with_details')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50); // Limit for better performance
 
       if (postsError) throw postsError;
 
+      // Get current user for checking likes (parallel fetch)
+      const { data: { user } } = await supabase.auth.getUser();
+      const userId = user?.id;
+
       // If user is logged in, check which posts they've liked
       let likedPostIds: string[] = [];
-      if (currentUserId) {
+      if (userId && postsData && postsData.length > 0) {
+        const postIds = postsData.map((p: any) => p.id);
         const { data: likesData } = await supabase
           .from('community_likes')
           .select('post_id')
-          .eq('user_id', currentUserId);
+          .eq('user_id', userId)
+          .in('post_id', postIds); // Only check likes for fetched posts
         
         likedPostIds = likesData?.map((l: { post_id: string }) => l.post_id) || [];
       }
@@ -153,35 +172,48 @@ export default function CommunityScreen() {
     }));
 
       setPosts(postsWithLikes);
+      setLoading(false);
+      setRefreshing(false);
       
-      // Fetch top comment for each post
-      await fetchTopComments(postsWithLikes.map(p => p.id));
+      // Fetch top comments in background (non-blocking)
+      if (postsWithLikes.length > 0) {
+        fetchTopComments(postsWithLikes.map(p => p.id));
+      }
     } catch (error: any) {
       console.error('Error fetching posts:', error.message);
       Alert.alert('Error', 'Failed to load posts. Please try again.');
-    } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentUserId]);
+  }, []);
 
   // Fetch top comment (most likes) for each post
   const fetchTopComments = async (postIds: string[]) => {
     if (postIds.length === 0) return;
     
     try {
-      // Get all comments for these posts with like counts
+      // Get all comments for these posts with like counts - single query
       const { data: commentsData, error } = await supabase
         .from('community_comments_with_user')
         .select('*')
-        .in('post_id', postIds);
+        .in('post_id', postIds)
+        .limit(200); // Limit comments
       
       if (error) throw error;
       
-      // Get like counts for each comment
+      if (!commentsData || commentsData.length === 0) {
+        setTopComments({});
+        return;
+      }
+      
+      // Get comment IDs to fetch only relevant likes
+      const commentIds = commentsData.map((c: any) => c.id);
+      
+      // Get like counts only for these comments
       const { data: commentLikes } = await supabase
         .from('community_comment_likes')
-        .select('comment_id');
+        .select('comment_id')
+        .in('comment_id', commentIds);
       
       const likeCounts: { [key: string]: number } = {};
       commentLikes?.forEach((like: { comment_id: string }) => {
@@ -205,12 +237,27 @@ export default function CommunityScreen() {
     }
   };
 
-  // Initial fetch
+  // Re-fetch when user changes (to update liked status)
   useEffect(() => {
-    if (currentUserId !== null) {
-      fetchPosts();
+    if (currentUserId && posts.length > 0) {
+      // Just update the liked status without full refetch
+      const updateLikedStatus = async () => {
+        const postIds = posts.map(p => p.id);
+        const { data: likesData } = await supabase
+          .from('community_likes')
+          .select('post_id')
+          .eq('user_id', currentUserId)
+          .in('post_id', postIds);
+        
+        const likedPostIds = likesData?.map((l: { post_id: string }) => l.post_id) || [];
+        setPosts(prev => prev.map(post => ({
+          ...post,
+          liked_by_user: likedPostIds.includes(post.id),
+        })));
+      };
+      updateLikedStatus();
     }
-  }, [currentUserId, fetchPosts]);
+  }, [currentUserId]);
 
   // Refresh handler
   const onRefresh = useCallback(() => {
@@ -312,17 +359,26 @@ export default function CommunityScreen() {
   // Open post detail (full view)
   const handleOpenPost = (post: Post) => {
     setSelectedPost(post);
+    setCommentsSectionY(0);
+    setPendingScrollToComments(false);
     setShowPostDetailModal(true);
     fetchComments(post.id);
-    setPendingScrollToComments(false);
   };
 
   // Open comments modal (YouTube-style popup)
   const handleOpenComments = (post: Post) => {
     setSelectedPost(post);
+    setCommentsSectionY(0);
+    setPendingScrollToComments(true);
     setShowPostDetailModal(true);
     fetchComments(post.id);
-    setPendingScrollToComments(true);
+  };
+
+  // Close post detail modal
+  const handleClosePostDetail = () => {
+    setShowPostDetailModal(false);
+    setPendingScrollToComments(false);
+    setCommentsSectionY(0);
   };
 
   useEffect(() => {
@@ -457,6 +513,202 @@ export default function CommunityScreen() {
     }
   };
 
+  // Edit Post
+  const handleEditPost = (post: Post) => {
+    setEditingPost(post);
+    setEditPostTitle(post.title);
+    setEditPostContent(post.content);
+    setShowEditPostModal(true);
+  };
+
+  const handleSaveEditPost = async () => {
+    if (!editingPost || !editPostTitle.trim() || !editPostContent.trim()) return;
+
+    setSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from('community_posts')
+        .update({
+          title: editPostTitle.trim(),
+          content: editPostContent.trim(),
+        })
+        .eq('id', editingPost.id)
+        .eq('user_id', currentUserId); // Ensure user owns the post
+
+      if (error) throw error;
+
+      // Update local state
+      const updatedPost = {
+        ...editingPost,
+        title: editPostTitle.trim(),
+        content: editPostContent.trim(),
+      };
+      
+      setPosts(prev => prev.map(p => p.id === editingPost.id ? updatedPost : p));
+      if (selectedPost?.id === editingPost.id) {
+        setSelectedPost(updatedPost);
+      }
+      
+      setShowEditPostModal(false);
+      setEditingPost(null);
+      Alert.alert('Success', 'Post updated successfully.');
+    } catch (error: any) {
+      console.error('Error updating post:', error.message);
+      Alert.alert('Error', 'Failed to update post. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Delete Post
+  const handleDeletePost = (post: Post) => {
+    Alert.alert(
+      'Delete Post',
+      'Are you sure you want to delete this post? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('community_posts')
+                .delete()
+                .eq('id', post.id)
+                .eq('user_id', currentUserId); // Ensure user owns the post
+
+              if (error) throw error;
+
+              setPosts(prev => prev.filter(p => p.id !== post.id));
+              if (selectedPost?.id === post.id) {
+                handleClosePostDetail();
+              }
+              Alert.alert('Success', 'Post deleted successfully.');
+            } catch (error: any) {
+              console.error('Error deleting post:', error.message);
+              Alert.alert('Error', 'Failed to delete post. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Edit Comment
+  const handleEditComment = (comment: Comment) => {
+    setEditingComment(comment);
+    setEditCommentContent(comment.content);
+    setShowEditCommentModal(true);
+  };
+
+  const handleSaveEditComment = async () => {
+    if (!editingComment || !editCommentContent.trim()) return;
+
+    setSubmittingComment(true);
+    try {
+      const { error } = await supabase
+        .from('community_comments')
+        .update({
+          content: editCommentContent.trim(),
+        })
+        .eq('id', editingComment.id)
+        .eq('user_id', currentUserId); // Ensure user owns the comment
+
+      if (error) throw error;
+
+      // Update local state
+      setComments(prev => prev.map(c => 
+        c.id === editingComment.id 
+          ? { ...c, content: editCommentContent.trim() }
+          : c
+      ));
+      
+      setShowEditCommentModal(false);
+      setEditingComment(null);
+    } catch (error: any) {
+      console.error('Error updating comment:', error.message);
+      Alert.alert('Error', 'Failed to update comment. Please try again.');
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
+
+  // Delete Comment
+  const handleDeleteComment = (comment: Comment) => {
+    Alert.alert(
+      'Delete Reply',
+      'Are you sure you want to delete this reply?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('community_comments')
+                .delete()
+                .eq('id', comment.id)
+                .eq('user_id', currentUserId); // Ensure user owns the comment
+
+              if (error) throw error;
+
+              setComments(prev => prev.filter(c => c.id !== comment.id));
+              
+              // Update comment count
+              if (selectedPost) {
+                const newCount = selectedPost.comments_count - 1;
+                setPosts(prev => prev.map(p => 
+                  p.id === selectedPost.id 
+                    ? { ...p, comments_count: newCount }
+                    : p
+                ));
+                setSelectedPost(prev => prev ? { ...prev, comments_count: newCount } : null);
+              }
+            } catch (error: any) {
+              console.error('Error deleting comment:', error.message);
+              Alert.alert('Error', 'Failed to delete reply. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Show action menu for post
+  const showPostActions = (post: Post) => {
+    Alert.alert(
+      'Post Options',
+      undefined,
+      [
+        { text: 'Edit', onPress: () => handleEditPost(post) },
+        { text: 'Delete', style: 'destructive', onPress: () => handleDeletePost(post) },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  // Show action menu for comment
+  const showCommentActions = (comment: Comment) => {
+    Alert.alert(
+      'Reply Options',
+      undefined,
+      [
+        { text: 'Edit', onPress: () => handleEditComment(comment) },
+        { text: 'Delete', style: 'destructive', onPress: () => handleDeleteComment(comment) },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  // Close Edit Comment Modal
+  const closeEditCommentModal = () => {
+    setShowEditCommentModal(false);
+    setEditingComment(null);
+    setEditCommentContent('');
+  };
+
   const getCategoryConfig = (key: PostCategory) => {
     return CATEGORIES.find(c => c.key === key) || CATEGORIES[0];
   };
@@ -486,11 +738,25 @@ export default function CommunityScreen() {
               <Text style={styles.postTime}>{timeAgo(item.created_at)}</Text>
             </View>
           </View>
-          <View style={[styles.categoryBadge, { backgroundColor: categoryConfig.color + '20' }]}>
-            <Ionicons name={categoryConfig.icon as any} size={12} color={categoryConfig.color} />
-            <Text style={[styles.categoryBadgeText, { color: categoryConfig.color }]}>
-              {categoryConfig.label}
-            </Text>
+          <View style={styles.postHeaderRight}>
+            <View style={[styles.categoryBadge, { backgroundColor: categoryConfig.color + '20' }]}>
+              <Ionicons name={categoryConfig.icon as any} size={12} color={categoryConfig.color} />
+              <Text style={[styles.categoryBadgeText, { color: categoryConfig.color }]}>
+                {categoryConfig.label}
+              </Text>
+            </View>
+            {item.user_id === currentUserId && (
+              <TouchableOpacity
+                style={styles.moreButton}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  showPostActions(item);
+                }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="ellipsis-horizontal" size={18} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
         
@@ -659,7 +925,7 @@ export default function CommunityScreen() {
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <View style={styles.emptyIconContainer}>
-                <Ionicons name="chatbubbles-outline" size={48} color="#94A3B8" />
+                <Ionicons name="chatbubbles-outline" size={48} color="#CBD5E1" />
               </View>
               <Text style={styles.emptyTitle}>No posts yet</Text>
               <Text style={styles.emptySubtitle}>Be the first to start a discussion!</Text>
@@ -697,7 +963,7 @@ export default function CommunityScreen() {
                 <Ionicons name="create" size={28} color="#1e4620" />
               </View>
               <Text style={styles.modalHeaderTitle}>New Post</Text>
-              <Text style={styles.modalHeaderSubtitle}>Share with the community</Text>
+              <Text style={styles.modalHeaderSubtitle}>Share your thoughts with the community</Text>
             </LinearGradient>
             
             <ScrollView style={styles.modalBody}>
@@ -812,155 +1078,347 @@ export default function CommunityScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Post Detail Modal */}
+      {/* Post Detail Modal - Full Screen Rollover */}
       <Modal
         visible={showPostDetailModal}
-        transparent
+        transparent={false}
         animationType="slide"
-        onRequestClose={() => setShowPostDetailModal(false)}
+        presentationStyle="pageSheet"
+        onRequestClose={handleClosePostDetail}
       >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalOverlay}
-        >
-          <View style={[styles.modalCard, styles.detailModalCard]}>
+        <SafeAreaView style={styles.detailModalContainer}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
+          >
             {/* Header */}
             <View style={styles.detailHeader}>
               <TouchableOpacity 
-                onPress={() => setShowPostDetailModal(false)}
+                onPress={handleClosePostDetail}
                 style={styles.detailBackButton}
               >
-                <Ionicons name="arrow-back" size={24} color="#1E293B" />
+                <Ionicons name="chevron-down" size={28} color="#1E293B" />
               </TouchableOpacity>
               <Text style={styles.detailHeaderTitle}>Discussion</Text>
-              <View style={{ width: 40 }} />
+              <TouchableOpacity 
+                onPress={() => selectedPost && handleSharePost(selectedPost)}
+                style={styles.detailShareButton}
+              >
+                <Ionicons name="share-outline" size={22} color="#1E293B" />
+              </TouchableOpacity>
             </View>
 
             {selectedPost && (
               <>
                 {/* Post Content */}
-                <ScrollView style={styles.detailBody} ref={detailScrollRef}>
+                <ScrollView 
+                  style={styles.detailBody} 
+                  ref={detailScrollRef}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {/* Main Post Card */}
                   <View style={styles.detailPostCard}>
+                    {/* Category Badge */}
+                    <View style={[styles.detailCategoryBadge, { backgroundColor: getCategoryConfig(selectedPost.category).color + '20' }]}>
+                      <Ionicons 
+                        name={getCategoryConfig(selectedPost.category).icon as any} 
+                        size={14} 
+                        color={getCategoryConfig(selectedPost.category).color} 
+                      />
+                      <Text style={[styles.detailCategoryText, { color: getCategoryConfig(selectedPost.category).color }]}>
+                        {getCategoryConfig(selectedPost.category).label}
+                      </Text>
+                    </View>
+
+                    {/* Title */}
+                    <Text style={styles.detailPostTitle}>{selectedPost.title}</Text>
+
                     {/* User Info */}
-                    <View style={styles.postHeader}>
-                      <View style={styles.postUserInfo}>
-                        {selectedPost.user_avatar ? (
-                          <Image source={{ uri: selectedPost.user_avatar }} style={styles.avatarImage} />
-                        ) : (
-                          <View style={[styles.avatar, { backgroundColor: getCategoryConfig(selectedPost.category).color }]}>
-                            <Text style={styles.avatarText}>{selectedPost.user_name[0].toUpperCase()}</Text>
-                          </View>
-                        )}
-                        <View>
-                          <Text style={styles.userName}>{selectedPost.user_name}</Text>
-                          <Text style={styles.postTime}>{timeAgo(selectedPost.created_at)}</Text>
+                    <View style={styles.detailUserRow}>
+                      {selectedPost.user_avatar ? (
+                        <Image source={{ uri: selectedPost.user_avatar }} style={styles.detailAvatarImage} />
+                      ) : (
+                        <View style={[styles.detailAvatar, { backgroundColor: getCategoryConfig(selectedPost.category).color }]}>
+                          <Text style={styles.detailAvatarText}>{selectedPost.user_name[0].toUpperCase()}</Text>
                         </View>
+                      )}
+                      <View style={styles.detailUserInfo}>
+                        <Text style={styles.detailUserName}>{selectedPost.user_name}</Text>
+                        <Text style={styles.detailPostTime}>{timeAgo(selectedPost.created_at)}</Text>
                       </View>
+                      {selectedPost.user_id === currentUserId && (
+                        <TouchableOpacity
+                          style={styles.detailMoreButton}
+                          onPress={() => showPostActions(selectedPost)}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Ionicons name="ellipsis-horizontal" size={20} color="#94A3B8" />
+                        </TouchableOpacity>
+                      )}
                     </View>
 
                     {selectedPost.gym_name && (
-                      <View style={styles.gymTag}>
-                        <Ionicons name="location" size={12} color="#64748B" />
-                        <Text style={styles.gymTagText}>{selectedPost.gym_name}</Text>
+                      <View style={styles.detailGymTag}>
+                        <Ionicons name="location" size={14} color="#64748B" />
+                        <Text style={styles.detailGymTagText}>{selectedPost.gym_name}</Text>
                       </View>
                     )}
 
-                    <Text style={styles.detailPostTitle}>{selectedPost.title}</Text>
                     <Text style={styles.detailPostContent}>{selectedPost.content}</Text>
 
                     {/* Actions */}
-                    <View style={styles.postActions}>
+                    <View style={styles.detailActions}>
                       <TouchableOpacity 
-                        style={styles.postAction}
+                        style={styles.detailAction}
                         onPress={() => handleLikePost(selectedPost.id)}
                       >
                         <Ionicons 
                           name={selectedPost.liked_by_user ? "heart" : "heart-outline"} 
-                          size={20} 
+                          size={22} 
                           color={selectedPost.liked_by_user ? "#E85D75" : "#64748B"} 
                         />
-                        <Text style={[styles.postActionText, selectedPost.liked_by_user && { color: '#E85D75' }]}>
-                          {selectedPost.likes}
+                        <Text style={[styles.detailActionText, selectedPost.liked_by_user && { color: '#E85D75' }]}>
+                          {selectedPost.likes} {selectedPost.likes === 1 ? 'like' : 'likes'}
                         </Text>
                       </TouchableOpacity>
-                      <View style={styles.postAction}>
-                        <Ionicons name="chatbubble" size={18} color="#1e4620" />
-                        <Text style={[styles.postActionText, { color: '#1e4620' }]}>
+                      <View style={styles.detailAction}>
+                        <Ionicons name="chatbubble" size={20} color="#1e4620" />
+                        <Text style={[styles.detailActionText, { color: '#1e4620' }]}>
                           {comments.length} {comments.length === 1 ? 'reply' : 'replies'}
                         </Text>
                       </View>
                     </View>
                   </View>
 
-                  {/* Comments Section */}
+                  {/* Replies Section */}
                   <View
-                    style={styles.commentsSection}
+                    style={styles.repliesSection}
                     onLayout={(event) => {
                       setCommentsSectionY(event.nativeEvent.layout.y);
                     }}
                   >
-                    <Text style={styles.commentsSectionTitle}>Replies</Text>
+                    <View style={styles.repliesSectionHeader}>
+                      <Text style={styles.repliesSectionTitle}>Replies</Text>
+                      <Text style={styles.repliesSectionCount}>{comments.length}</Text>
+                    </View>
+                    
                     {loadingComments ? (
                       <View style={styles.loadingComments}>
                         <ActivityIndicator size="small" color="#1e4620" />
                         <Text style={styles.loadingCommentsText}>Loading replies...</Text>
                       </View>
-                    ) : comments.map(comment => (
-                      <View key={comment.id} style={styles.commentCard}>
-                        <View style={styles.commentHeader}>
-                          {comment.user_avatar ? (
-                            <Image source={{ uri: comment.user_avatar }} style={styles.commentAvatarImage} />
-                          ) : (
-                            <View style={styles.commentAvatar}>
-                              <Text style={styles.commentAvatarText}>
-                                {comment.user_name[0].toUpperCase()}
-                              </Text>
+                    ) : comments.length > 0 ? (
+                      comments.map((comment, index) => (
+                        <View 
+                          key={comment.id} 
+                          style={[
+                            styles.replyCard,
+                            index === comments.length - 1 && { borderBottomWidth: 0 }
+                          ]}
+                        >
+                          <View style={styles.replyHeader}>
+                            {comment.user_avatar ? (
+                              <Image source={{ uri: comment.user_avatar }} style={styles.replyAvatarImage} />
+                            ) : (
+                              <View style={styles.replyAvatar}>
+                                <Text style={styles.replyAvatarText}>
+                                  {comment.user_name[0].toUpperCase()}
+                                </Text>
+                              </View>
+                            )}
+                            <View style={styles.replyUserInfo}>
+                              <Text style={styles.replyUserName}>{comment.user_name}</Text>
+                              <Text style={styles.replyTime}>{timeAgo(comment.created_at)}</Text>
                             </View>
-                          )}
-                          <View style={styles.commentUserInfo}>
-                            <Text style={styles.commentUserName}>{comment.user_name}</Text>
-                            <Text style={styles.commentTime}>{timeAgo(comment.created_at)}</Text>
+                            {comment.user_id === currentUserId && (
+                              <TouchableOpacity
+                                style={styles.replyMoreButton}
+                                onPress={() => showCommentActions(comment)}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                              >
+                                <Ionicons name="ellipsis-horizontal" size={16} color="#94A3B8" />
+                              </TouchableOpacity>
+                            )}
                           </View>
+                          <Text style={styles.replyContent}>{comment.content}</Text>
                         </View>
-                        <Text style={styles.commentContent}>{comment.content}</Text>
-                      </View>
-                    ))}
-                    {!loadingComments && comments.length === 0 && (
-                      <View style={styles.noComments}>
-                        <Ionicons name="chatbubble-outline" size={32} color="#CBD5E1" />
-                        <Text style={styles.noCommentsText}>No replies yet. Be the first!</Text>
+                      ))
+                    ) : (
+                      <View style={styles.noReplies}>
+                        <View style={styles.noRepliesIconContainer}>
+                          <Ionicons name="chatbubble-outline" size={40} color="#CBD5E1" />
+                        </View>
+                        <Text style={styles.noRepliesTitle}>No replies yet</Text>
+                        <Text style={styles.noRepliesSubtitle}>Be the first to join the conversation!</Text>
                       </View>
                     )}
                   </View>
+                  
+                  {/* Bottom padding for input */}
+                  <View style={{ height: 100 }} />
                 </ScrollView>
 
                 {/* Comment Input */}
-                <View style={styles.commentInputContainer}>
-                  <View style={styles.commentInputWrapper}>
+                <View style={styles.replyInputContainer}>
+                  <View style={styles.replyInputWrapper}>
                     <TextInput
-                      style={styles.commentInput}
-                      placeholder="Add a reply"
+                      style={styles.replyInput}
+                      placeholder="Write a reply..."
                       placeholderTextColor="#94A3B8"
                       value={newComment}
                       onChangeText={setNewComment}
                       multiline
+                      maxLength={500}
                     />
                     <TouchableOpacity 
                       style={[
-                        styles.commentSendButton,
-                        !newComment.trim() && styles.commentSendButtonDisabled,
+                        styles.replySendButton,
+                        !newComment.trim() && styles.replySendButtonDisabled,
                       ]}
                       onPress={handleAddComment}
-                      disabled={!newComment.trim()}
+                      disabled={!newComment.trim() || submittingComment}
                     >
-                      <Ionicons name="send" size={18} color={newComment.trim() ? '#FFF' : '#94A3B8'} />
+                      {submittingComment ? (
+                        <ActivityIndicator size="small" color="#FFF" />
+                      ) : (
+                        <Ionicons name="send" size={18} color={newComment.trim() ? '#FFF' : '#94A3B8'} />
+                      )}
                     </TouchableOpacity>
                   </View>
                 </View>
               </>
             )}
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Edit Post Modal */}
+      <Modal
+        visible={showEditPostModal}
+        transparent={false}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowEditPostModal(false)}
+      >
+        <SafeAreaView style={styles.detailModalContainer}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
+          >
+            <View style={styles.editModalHeader}>
+              <TouchableOpacity onPress={() => setShowEditPostModal(false)}>
+                <Ionicons name="chevron-down" size={28} color="#1E293B" />
+              </TouchableOpacity>
+              <Text style={styles.editModalHeaderTitle}>Edit Post</Text>
+              <View style={{ width: 28 }} />
+            </View>
+
+            <ScrollView style={styles.editModalBody} keyboardShouldPersistTaps="handled">
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Title</Text>
+                <TextInput
+                  style={styles.editTitleInput}
+                  placeholder="Post title"
+                  placeholderTextColor="#94A3B8"
+                  value={editPostTitle}
+                  onChangeText={setEditPostTitle}
+                  autoFocus
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Content</Text>
+                <TextInput
+                  style={styles.editTextArea}
+                  placeholder="Post content"
+                  placeholderTextColor="#94A3B8"
+                  value={editPostContent}
+                  onChangeText={setEditPostContent}
+                  multiline
+                  textAlignVertical="top"
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.editModalFooter}>
+              <TouchableOpacity 
+                style={styles.modalCancelButton}
+                onPress={() => setShowEditPostModal(false)}
+                disabled={submitting}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.editSaveButton, (!editPostTitle.trim() || !editPostContent.trim() || submitting) && { opacity: 0.5 }]}
+                onPress={handleSaveEditPost}
+                disabled={submitting || !editPostTitle.trim() || !editPostContent.trim()}
+              >
+                {submitting ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.editSaveButtonText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Edit Comment Modal (guaranteed to show and be editable) */}
+      <Modal
+        visible={showEditCommentModal}
+        transparent={false}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeEditCommentModal}
+      >
+        <SafeAreaView style={styles.detailModalContainer}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
+          >
+            <View style={styles.editModalHeader}>
+              <TouchableOpacity onPress={closeEditCommentModal}>
+                <Ionicons name="chevron-down" size={28} color="#1E293B" />
+              </TouchableOpacity>
+              <Text style={styles.editModalHeaderTitle}>Edit Reply</Text>
+              <View style={{ width: 28 }} />
+            </View>
+            <View style={styles.editModalBody}>
+              <Text style={styles.formLabel}>Your Reply</Text>
+              <TextInput
+                style={styles.editTextArea}
+                placeholder="Your reply"
+                placeholderTextColor="#94A3B8"
+                value={editCommentContent}
+                onChangeText={setEditCommentContent}
+                multiline
+                autoFocus
+                textAlignVertical="top"
+              />
+            </View>
+            <View style={styles.editModalFooter}>
+              <TouchableOpacity 
+                style={styles.modalCancelButton}
+                onPress={closeEditCommentModal}
+                disabled={submittingComment}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.editSaveButton, (!editCommentContent.trim() || submittingComment) && { opacity: 0.5 }]}
+                onPress={handleSaveEditComment}
+                disabled={submittingComment || !editCommentContent.trim()}
+              >
+                {submittingComment ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.editSaveButtonText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
     </View>
   );
@@ -1074,6 +1532,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
+  },
+  postHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  moreButton: {
+    padding: 4,
   },
   postUserInfo: {
     flexDirection: 'row',
@@ -1225,29 +1691,31 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#1E293B',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   emptySubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 24,
   },
   emptyButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1e4620',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 24,
     marginTop: 20,
-    gap: 6,
+    gap: 8,
   },
   emptyButtonText: {
     color: '#FFF',
     fontWeight: '600',
-    fontSize: 15,
+    fontSize: 16,
   },
 
   // Modal
@@ -1267,6 +1735,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 24,
     paddingHorizontal: 20,
+  },
+  // Edit Modal Styles
+  editModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  editModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  editModalContent: {
+    width: '100%',
+  },
+  editModalCard: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    overflow: 'hidden',
   },
   modalHeaderIcon: {
     width: 56,
@@ -1295,6 +1782,72 @@ const styles = StyleSheet.create({
   modalBody: {
     padding: 20,
     maxHeight: 400,
+  },
+  
+  // Edit Modal Styles
+  editModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFF',
+  },
+  editModalHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  editModalBody: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: '#FFF',
+  },
+  editTitleInput: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: '#1E293B',
+  },
+  editTextArea: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: '#1E293B',
+    minHeight: 150,
+    textAlignVertical: 'top',
+  },
+  editModalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    backgroundColor: '#FFF',
+    gap: 12,
+  },
+  editSaveButton: {
+    backgroundColor: '#1e4620',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  editSaveButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 
   // Form
@@ -1390,7 +1943,11 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
 
-  // Detail Modal
+  // Detail Modal - Full Screen Rollover
+  detailModalContainer: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
   detailModalCard: {
     maxHeight: '95%',
   },
@@ -1398,44 +1955,269 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    backgroundColor: '#FFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#E2E8F0',
   },
   detailBackButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
   },
   detailHeaderTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
     color: '#1E293B',
+  },
+  detailShareButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   detailBody: {
     flex: 1,
   },
   detailPostCard: {
     padding: 20,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 8,
+    borderBottomColor: '#F1F5F9',
+  },
+  detailCategoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 12,
+    gap: 4,
+  },
+  detailCategoryText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  detailPostTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 16,
+    lineHeight: 26,
+  },
+  detailUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 12,
+  },
+  detailAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  detailAvatarImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  detailAvatarText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  detailUserInfo: {
+    flex: 1,
+  },
+  detailMoreButton: {
+    padding: 6,
+  },
+  detailUserName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  detailPostTime: {
+    fontSize: 13,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  detailGymTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 4,
+  },
+  detailGymTagText: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  detailPostContent: {
+    fontSize: 16,
+    color: '#334155',
+    lineHeight: 24,
+    marginBottom: 20,
+  },
+  detailActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 24,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  detailAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  detailActionText: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+
+  // Replies Section
+  repliesSection: {
+    backgroundColor: '#FFF',
+    paddingTop: 20,
+    paddingHorizontal: 20,
+  },
+  repliesSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  repliesSectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  repliesSectionCount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  replyCard: {
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
-  detailPostTitle: {
-    fontSize: 18,
+  replyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 10,
+  },
+  replyAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#1e4620',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  replyAvatarImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  replyAvatarText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  replyUserInfo: {
+    flex: 1,
+  },
+  replyMoreButton: {
+    padding: 4,
+  },
+  replyUserName: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#1E293B',
-    marginBottom: 8,
   },
-  detailPostContent: {
+  replyTime: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  replyContent: {
     fontSize: 15,
     color: '#475569',
     lineHeight: 22,
-    marginBottom: 16,
+    marginLeft: 42,
+  },
+  noReplies: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  noRepliesIconContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  noRepliesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  noRepliesSubtitle: {
+    fontSize: 14,
+    color: '#94A3B8',
+  },
+  replyInputContainer: {
+    backgroundColor: '#FFF',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  replyInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 10,
+  },
+  replyInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1E293B',
+    maxHeight: 100,
+    paddingVertical: 6,
+  },
+  replySendButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1e4620',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  replySendButtonDisabled: {
+    backgroundColor: '#E2E8F0',
   },
 
-  // Comments
+  // Old Comments (keep for backwards compatibility)
   commentsSection: {
     padding: 20,
   },
@@ -1520,7 +2302,7 @@ const styles = StyleSheet.create({
     paddingBottom: 34,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    backgroundColor: '#FFF',
+       backgroundColor: '#FFF',
   },
   commentInputWrapper: {
     flexDirection: 'row',

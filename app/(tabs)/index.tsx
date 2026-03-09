@@ -989,6 +989,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     paddingBottom: 60,
   },
+  emptyEmoji: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
   emptyIconContainer: {
     width: 100,
     height: 100,
@@ -999,8 +1003,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#1E293B',
     marginBottom: 8,
   },
@@ -1008,7 +1012,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 24,
   },
   emptyButton: {
     flexDirection: 'row',
@@ -1016,7 +1020,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e4620',
     paddingHorizontal: 24,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: 24,
     marginTop: 24,
     gap: 8,
     shadowColor: '#1e4620',

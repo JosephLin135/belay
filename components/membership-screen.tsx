@@ -135,19 +135,38 @@ export function MembershipScreen({ visible, selectedPlan, onClose, onConfirm }: 
   };
 
   const updatePlanInProfile = async (planId: PlanId, status: 'active' | 'pending' | 'canceled') => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('You must be signed in to update your plan.');
+    // First check for active session
+    const { data: sessionData } = await supabase.auth.getSession();
+    const user = sessionData?.session?.user;
+    
+    if (!user) {
+      // Try getUser as fallback
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData?.user) {
+        console.log('No user found for plan update, skipping...');
+        return; // Don't throw - just skip if no user
+      }
+    }
+    
+    const userId = user?.id || (await supabase.auth.getUser()).data?.user?.id;
+    if (!userId) {
+      console.log('No user ID found for plan update');
+      return;
+    }
 
     const { error } = await supabase
       .from('profiles')
-      .upsert({
-        id: user.id,
+      .update({
         plan_id: planId,
         plan_status: status,
         plan_updated_at: new Date().toISOString(),
-      });
+      })
+      .eq('id', userId);
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error updating plan in profile:', error);
+      // Don't throw - profile update failure shouldn't block onboarding
+    }
   };
 
   const startPaidCheckout = async () => {
