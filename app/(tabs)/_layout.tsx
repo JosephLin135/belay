@@ -7,7 +7,7 @@ import { HapticTab } from '@/components/haptic-tab';
 import { View, ActivityIndicator } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { Colors } from '@/constants/theme'; 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { OnboardingFlow, checkOnboardingComplete, resetOnboarding } from '@/components/onboarding-flow';
 import AsyncStorage from '@react-native-async-storage/async-storage';
