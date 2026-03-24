@@ -6,6 +6,7 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
+  RefreshControl,
   Alert,
   ActivityIndicator,
   Image,
@@ -22,7 +23,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import * as FileSystem from 'expo-file-system/legacy';
 import { resetOnboarding } from '@/components/onboarding-flow';
-import { setSkipToAuthOnSignOut } from '@/app/(tabs)/_layout';
+import { setSkipToAuthOnSignOut, triggerRouteSetterRefresh } from '@/app/(tabs)/_layout';
 import { 
   getSavedPlan, 
   savePlanSelection, 
@@ -57,6 +58,8 @@ interface UserProfile {
   preferred_style?: string;
   instagram_handle?: string;
   looking_for?: string[];
+  is_route_setter?: boolean;
+  route_setter_gym?: string;
 }
 
 interface GymSuggestion {
@@ -70,6 +73,7 @@ interface UserStats {
   posts_count: number;
   comments_count: number;
   likes_received: number;
+  likes_given: number;
 }
 
 const GRADE_OPTIONS = [
@@ -124,7 +128,8 @@ export default function ProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [stats, setStats] = useState<UserStats>({ posts_count: 0, comments_count: 0, likes_received: 0 });
+  const [stats, setStats] = useState<UserStats>({ posts_count: 0, comments_count: 0, likes_received: 0, likes_given: 0 });
+  const [refreshing, setRefreshing] = useState(false);
   
   // Plan state
   const [currentPlan, setCurrentPlan] = useState<Plan | null>(null);
@@ -150,10 +155,32 @@ export default function ProfileScreen() {
   const [showGymSearch, setShowGymSearch] = useState(false);
   const [gymSearchQuery, setGymSearchQuery] = useState('');
   const [gymSuggestions, setGymSuggestions] = useState<GymSuggestion[]>([]);
+  
+  // Route Setter State
+  const [isRouteSetter, setIsRouteSetter] = useState(false);
+  const [routeSetterGym, setRouteSetterGym] = useState('');
+  const [showRouteSetterModal, setShowRouteSetterModal] = useState(false);
+  const [hasPendingApplication, setHasPendingApplication] = useState(false);
+  const [submittingApplication, setSubmittingApplication] = useState(false);
+  
+  // Application form fields
+  const [appFullName, setAppFullName] = useState('');
+  const [appGymName, setAppGymName] = useState('');
+  const [appExperience, setAppExperience] = useState('');
+  const [appAdditionalInfo, setAppAdditionalInfo] = useState('');
 
   useEffect(() => {
     loadProfile();
     loadCurrentPlan();
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([loadProfile(), loadCurrentPlan()]);
+    } finally {
+      setRefreshing(false);
+    }
   }, []);
 
   const loadCurrentPlan = async () => {
@@ -227,6 +254,55 @@ export default function ProfileScreen() {
         setPreferredStyle(profileData.preferred_style || '');
         setInstagramHandle(profileData.instagram_handle || '');
         setLookingFor(profileData.looking_for || []);
+        
+        // Update route setter status and trigger tab refresh
+        const nowRouteSetter = profileData.is_route_setter || false;
+        setIsRouteSetter(nowRouteSetter);
+        setRouteSetterGym(profileData.route_setter_gym || '');
+        
+        // If user is now a route setter, mark any pending applications as approved
+        if (nowRouteSetter) {
+          await supabase
+            .from('route_setter_applications')
+            .update({ status: 'approved' })
+            .eq('user_id', user.id)
+            .eq('status', 'pending');
+        }
+        
+        // Always trigger refresh to sync tab layout with current status
+        await triggerRouteSetterRefresh();
+        
+        // Check for pending route setter application
+        if (!nowRouteSetter) {
+          // Check if there's an approved or rejected application
+          const { data: oldApp } = await supabase
+            .from('route_setter_applications')
+            .select('id, status')
+            .eq('user_id', user.id)
+            .in('status', ['approved', 'rejected'])
+            .maybeSingle();
+          
+          if (oldApp) {
+            // Access was revoked or app was rejected - delete all applications so they can reapply
+            await supabase
+              .from('route_setter_applications')
+              .delete()
+              .eq('user_id', user.id);
+            setHasPendingApplication(false);
+          } else {
+            // Check for pending applications
+            const { data: appData } = await supabase
+              .from('route_setter_applications')
+              .select('status')
+              .eq('user_id', user.id)
+              .eq('status', 'pending')
+              .maybeSingle();
+            
+            setHasPendingApplication(!!appData);
+          }
+        } else {
+          setHasPendingApplication(false);
+        }
       } else {
         // Create profile if doesn't exist
         const { data: newProfile } = await supabase
@@ -271,10 +347,17 @@ export default function ProfileScreen() {
         likesReceived = count || 0;
       }
 
+      // Count likes given by user
+      const { count: likesGivenCount } = await supabase
+        .from('community_likes')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+
       setStats({
         posts_count: postsCount || 0,
         comments_count: commentsCount || 0,
         likes_received: likesReceived,
+        likes_given: likesGivenCount || 0,
       });
 
     } catch (error: any) {
@@ -294,6 +377,24 @@ export default function ProfileScreen() {
 
     setSaving(true);
     try {
+      // Check if display name is taken by another user
+      const { data: existingWithName, error: nameCheckError } = await supabase
+        .from('profiles')
+        .select('id')
+        .ilike('display_name', displayName.trim())
+        .neq('id', user.id)
+        .limit(1);
+      
+      if (nameCheckError) {
+        console.error('Error checking display name:', nameCheckError);
+      }
+      
+      if (existingWithName && existingWithName.length > 0) {
+        Alert.alert('Display Name Taken', 'This display name is already in use. Please choose a different one.');
+        setSaving(false);
+        return;
+      }
+
       // First check if profile exists
       const { data: existingProfile } = await supabase
         .from('profiles')
@@ -618,7 +719,19 @@ export default function ProfileScreen() {
         </View>
       </LinearGradient>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#1e4620"
+            colors={['#1e4620', '#449e00']}
+            progressBackgroundColor="#FFFFFF"
+          />
+        }
+      >
         {/* Avatar & Stats Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatarSection}>
@@ -656,8 +769,13 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{stats.likes_given}</Text>
+              <Text style={styles.statLabel}>Liked</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
               <Text style={styles.statNumber}>{stats.likes_received}</Text>
-              <Text style={styles.statLabel}>Likes</Text>
+              <Text style={styles.statLabel}>Received</Text>
             </View>
           </View>
         </View>
@@ -720,7 +838,7 @@ export default function ProfileScreen() {
           <View style={styles.formGroup}>
             <View style={styles.formLabelRow}>
               <Text style={styles.formLabel}>Home Gyms</Text>
-              <Text style={styles.formLabelHint}>{homeGyms.length}/3</Text>
+              <Text style={styles.formLabelHint}>{homeGyms.length}/</Text>
             </View>
             
             {/* Current gyms list */}
@@ -952,6 +1070,155 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {/* Route Setter Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Route Setter Access</Text>
+          <Text style={styles.sectionSubtitle}>
+            {isRouteSetter 
+              ? 'You have access to Boulder Vision tools' 
+              : hasPendingApplication
+                ? 'Your application is being reviewed'
+                : 'Are you a route setter? Get access to Boulder Vision'}
+          </Text>
+          
+          {isRouteSetter ? (
+            <>
+              <View style={styles.routeSetterCard}>
+                <LinearGradient
+                  colors={['#1e4620', '#449e']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.routeSetterGradient}
+                >
+                  <View style={styles.routeSetterHeader}>
+                    <View style={styles.routeSetterBadge}>
+                      <Ionicons name="construct" size={20} color="#FFF" />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.routeSetterTitle}>Route Setter</Text>
+                      {routeSetterGym && (
+                        <Text style={styles.routeSetterGym}>{routeSetterGym}</Text>
+                      )}
+                    </View>
+                    <Ionicons name="checkmark-circle" size={24} color="#FFF" />
+                  </View>
+                  <Text style={styles.routeSetterInfo}>
+                    Access Boulder Vision in the main navigation to manage routes and analyze climbs.
+                  </Text>
+                </LinearGradient>
+              </View>
+              <TouchableOpacity 
+                style={styles.routeSetterSignOutButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Remove Route Setter Access',
+                    'Are you sure you want to remove your route setter access? You will need to reapply to get access again.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Remove Access',
+                        style: 'destructive',
+                        onPress: async () => {
+                          try {
+                            const { error } = await supabase
+                              .from('profiles')
+                              .update({
+                                is_route_setter: false,
+                                route_setter_gym: null,
+                              })
+                              .eq('id', user.id);
+                            
+                            if (error) throw error;
+                            
+                            setIsRouteSetter(false);
+                            setRouteSetterGym('');
+                            await triggerRouteSetterRefresh();
+                            Alert.alert('Access Removed', 'Your route setter access has been removed.');
+                          } catch (err: any) {
+                            Alert.alert('Error', err.message || 'Failed to remove access');
+                          }
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Ionicons name="log-out-outline" size={18} color="#DC2626" />
+                <Text style={styles.routeSetterSignOutText}>Remove Route Setter Access</Text>
+              </TouchableOpacity>
+            </>
+          ) : hasPendingApplication ? (
+            <View style={styles.routeSetterPendingCard}>
+              <View style={styles.routeSetterPendingContent}>
+                <View style={styles.routeSetterPendingIcon}>
+                  <Ionicons name="time" size={24} color="#F59E0B" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.routeSetterPendingTitle}>Application Pending</Text>
+                  <Text style={styles.routeSetterPendingDescription}>
+                    We're reviewing your application. You'll be notified once approved.
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.withdrawApplicationButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Withdraw Application',
+                    'Are you sure you want to withdraw your route setter application?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Withdraw',
+                        style: 'destructive',
+                        onPress: async () => {
+                          try {
+                            const { error } = await supabase
+                              .from('route_setter_applications')
+                              .delete()
+                              .eq('user_id', user.id)
+                              .eq('status', 'pending');
+                            
+                            if (error) throw error;
+                            
+                            setHasPendingApplication(false);
+                            Alert.alert('Withdrawn', 'Your application has been withdrawn.');
+                          } catch (err: any) {
+                            Alert.alert('Error', err.message || 'Failed to withdraw application');
+                          }
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Ionicons name="close-circle-outline" size={18} color="#DC2626" />
+                <Text style={styles.withdrawApplicationText}>Withdraw Application</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity 
+              style={styles.routeSetterApplyButton}
+              onPress={() => {
+                // Pre-fill name and email from profile
+                setAppFullName(profile?.name || '');
+                setShowRouteSetterModal(true);
+              }}
+            >
+              <LinearGradient
+                colors={['#1e4620', '#449e']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.routeSetterApplyGradient}
+              >
+                <Ionicons name="construct-outline" size={20} color="#FFF" />
+                <Text style={styles.routeSetterApplyText}>Apply as Route Setter</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFF" />
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+        </View>
+
         {/* Account Info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
@@ -1145,6 +1412,223 @@ export default function ProfileScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Route Setter Application Modal */}
+      <Modal
+        visible={showRouteSetterModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowRouteSetterModal(false)}
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <View style={[styles.routeSetterModal, { maxHeight: '90%' }]}>
+            <View style={styles.routeSetterModalHeader}>
+              <Text style={styles.routeSetterModalTitle}>Route Setter Application</Text>
+              <TouchableOpacity onPress={() => setShowRouteSetterModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView 
+              showsVerticalScrollIndicator={false} 
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 50 }}
+            >
+              <View style={styles.routeSetterModalContent}>
+                <View style={styles.routeSetterModalIcon}>
+                  <LinearGradient
+                    colors={['#7C3AED', '#A855F7']}
+                    style={styles.routeSetterModalIconGradient}
+                  >
+                    <Ionicons name="construct" size={32} color="#FFF" />
+                  </LinearGradient>
+                </View>
+                
+                <Text style={styles.routeSetterModalDescription}>
+                  Apply to become a verified route setter and unlock Boulder Vision tools. Applications are reviewed within 24-48 hours.
+                </Text>
+                
+                <View style={styles.routeSetterFeatures}>
+                  <View style={styles.routeSetterFeatureRow}>
+                    <Ionicons name="eye" size={20} color="#7C3AED" />
+                    <Text style={styles.routeSetterFeatureText}>AI-powered route visualization</Text>
+                  </View>
+                  <View style={styles.routeSetterFeatureRow}>
+                    <Ionicons name="analytics" size={20} color="#7C3AED" />
+                    <Text style={styles.routeSetterFeatureText}>Grade difficulty analysis</Text>
+                  </View>
+                  <View style={styles.routeSetterFeatureRow}>
+                    <Ionicons name="people" size={20} color="#7C3AED" />
+                    <Text style={styles.routeSetterFeatureText}>Community feedback dashboard</Text>
+                  </View>
+                  <View style={styles.routeSetterFeatureRow}>
+                    <Ionicons name="camera" size={20} color="#7C3AED" />
+                    <Text style={styles.routeSetterFeatureText}>Photo documentation tools</Text>
+                  </View>
+                </View>
+
+                <View style={styles.applicationFormSection}>
+                  <Text style={styles.applicationFormTitle}>Application Form</Text>
+                  
+                  <View style={styles.formGroup}>
+                    <Text style={styles.formLabel}>Full Name *</Text>
+                    <View style={styles.formInputWrapper}>
+                      <Ionicons name="person-outline" size={20} color="#94A3B8" />
+                      <TextInput
+                        style={styles.formInput}
+                        placeholder="Your full name"
+                        placeholderTextColor="#94A3B8"
+                        value={appFullName}
+                        onChangeText={setAppFullName}
+                        autoCapitalize="words"
+                      />
+                    </View>
+                  </View>
+                  
+                  <View style={styles.formGroup}>
+                    <Text style={styles.formLabel}>Gym Name *</Text>
+                    <View style={styles.formInputWrapper}>
+                      <Ionicons name="business-outline" size={20} color="#94A3B8" />
+                      <TextInput
+                        style={styles.formInput}
+                        placeholder="Where do you set routes?"
+                        placeholderTextColor="#94A3B8"
+                        value={appGymName}
+                        onChangeText={setAppGymName}
+                      />
+                    </View>
+                  </View>
+                  
+                  <View style={styles.formGroup}>
+                    <Text style={styles.formLabel}>Route Setting Experience</Text>
+                    <View style={[styles.formInputWrapper, { alignItems: 'flex-start', minHeight: 80 }]}>
+                      <Ionicons name="document-text-outline" size={20} color="#94A3B8" style={{ marginTop: 12 }} />
+                      <TextInput
+                        style={[styles.formInput, { minHeight: 80, textAlignVertical: 'top', paddingTop: 12 }]}
+                        placeholder="How long have you been setting? Any certifications?"
+                        placeholderTextColor="#94A3B8"
+                        value={appExperience}
+                        onChangeText={setAppExperience}
+                        multiline
+                        numberOfLines={4}
+                        scrollEnabled={true}
+                      />
+                    </View>
+                  </View>
+                  
+                  <View style={styles.formGroup}>
+                    <Text style={styles.formLabel}>Additional Information (Optional)</Text>
+                    <View style={[styles.formInputWrapper, { alignItems: 'flex-start', minHeight: 80 }]}>
+                      <Ionicons name="chatbox-outline" size={20} color="#94A3B8" style={{ marginTop: 12 }} />
+                      <TextInput
+                        style={[styles.formInput, { minHeight: 60, textAlignVertical: 'top', paddingTop: 12 }]}
+                        placeholder="Anything else you'd like us to know?"
+                        placeholderTextColor="#94A3B8"
+                        value={appAdditionalInfo}
+                        onChangeText={setAppAdditionalInfo}
+                        multiline
+                        numberOfLines={3}
+                        scrollEnabled={true}
+                      />
+                    </View>
+                  </View>
+                  
+                  {/* Spacer for keyboard */}
+                  <View style={{ height: 120 }} />
+                </View>
+                
+                <TouchableOpacity
+                  style={[
+                    styles.routeSetterSubmitButton,
+                    (!appFullName.trim() || !appGymName.trim() || !appExperience.trim() || submittingApplication) && styles.routeSetterSubmitButtonDisabled
+                  ]}
+                  onPress={async () => {
+                    if (!appFullName.trim() || !appGymName.trim() || !appExperience.trim()) {
+                      Alert.alert('Required Fields', 'Please fill in all required fields.');
+                      return;
+                    }
+                    
+                    setSubmittingApplication(true);
+                    
+                    try {
+                      const { data: { session } } = await supabase.auth.getSession();
+                      if (!session) {
+                        throw new Error('Not authenticated');
+                      }
+                      
+                      const response = await fetch(
+                        `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/route-setter-application`,
+                        {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${session.access_token}`,
+                          },
+                          body: JSON.stringify({
+                            fullName: appFullName.trim(),
+                            email: user?.email,
+                            gymName: appGymName.trim(),
+                            experience: appExperience.trim(),
+                            additionalInfo: appAdditionalInfo.trim() || undefined,
+                          }),
+                        }
+                      );
+                      
+                      const result = await response.json();
+                      
+                      if (!response.ok) {
+                        throw new Error(result.error || 'Failed to submit application');
+                      }
+                      
+                      setHasPendingApplication(true);
+                      setShowRouteSetterModal(false);
+                      // Clear form
+                      setAppFullName('');
+                      setAppGymName('');
+                      setAppExperience('');
+                      setAppAdditionalInfo('');
+                      
+                      Alert.alert(
+                        'Application Received!',
+                        'Thanks for applying! We\'ll review your application and get back to you within 24-48 hours.'
+                      );
+                    } catch (error: any) {
+                      Alert.alert('Error', error.message || 'Failed to submit application');
+                    } finally {
+                      setSubmittingApplication(false);
+                    }
+                  }}
+                  disabled={!appFullName.trim() || !appGymName.trim() || !appExperience.trim() || submittingApplication}
+                >
+                  <LinearGradient
+                    colors={(appFullName.trim() && appGymName.trim() && appExperience.trim() && !submittingApplication) ? ['#7C3AED', '#A855F7'] : ['#94A3B8', '#CBD5E1']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.routeSetterSubmitGradient}
+                  >
+                    {submittingApplication ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="paper-plane" size={20} color="#FFF" />
+                        <Text style={styles.routeSetterSubmitText}>Submit Application</Text>
+                      </>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+                
+                <Text style={styles.routeSetterDisclaimer}>
+                  By submitting, you confirm that you are an active route setter. We verify all applications to ensure the quality of our route setter community.
+                </Text>
+              </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -1164,7 +1648,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
 
-  // Hero Header - Made taller to not cover avatar
   heroHeader: {
     paddingHorizontal: 20,
     paddingVertical: 10,
@@ -1198,7 +1681,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Profile Card
   profileCard: {
     backgroundColor: '#FFF',
     marginHorizontal: 16,
@@ -1797,5 +2279,221 @@ const styles = StyleSheet.create({
   planOptionFeatureText: {
     fontSize: 13,
     color: '#64748B',
+  },
+  // Route Setter Styles
+  routeSetterCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginTop: 12,
+  },
+  routeSetterGradient: {
+    padding: 16,
+  },
+  routeSetterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  routeSetterBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  routeSetterTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  routeSetterGym: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 2,
+  },
+  routeSetterInfo: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.9)',
+    marginTop: 12,
+    lineHeight: 18,
+  },
+  routeSetterApplyButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 12,
+  },
+  routeSetterApplyGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  routeSetterApplyText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFF',
+    flex: 1,
+  },
+  routeSetterModal: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '85%',
+    width: '100%',
+    marginTop: 'auto',
+  },
+  routeSetterModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  routeSetterModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  routeSetterModalContent: {
+    padding: 20,
+  },
+  routeSetterModalIcon: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  routeSetterModalIconGradient: {
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  routeSetterModalDescription: {
+    fontSize: 15,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  routeSetterFeatures: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    gap: 12,
+  },
+  routeSetterFeatureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  routeSetterFeatureText: {
+    fontSize: 14,
+    color: '#1E293B',
+  },
+  routeSetterSubmitButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 8,
+  },
+  routeSetterSubmitButtonDisabled: {
+    opacity: 0.6,
+  },
+  routeSetterSubmitGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    gap: 8,
+  },
+  routeSetterSubmitText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+  routeSetterDisclaimer: {
+    fontSize: 12,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginTop: 16,
+    lineHeight: 18,
+  },
+  // Route Setter Additional Styles
+  routeSetterSignOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginTop: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FED7D7',
+    backgroundColor: '#FEF2F2',
+    gap: 8,
+  },
+  routeSetterSignOutText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#DC2626',
+  },
+  routeSetterPendingCard: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FEF3C7',
+    marginTop: 12,
+    overflow: 'hidden',
+  },
+  routeSetterPendingContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  routeSetterPendingIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#FEF3C7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  routeSetterPendingTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#92400E',
+    marginBottom: 2,
+  },
+  routeSetterPendingDescription: {
+    fontSize: 13,
+    color: '#B45309',
+    lineHeight: 18,
+  },
+  applicationFormSection: {
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  applicationFormTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 16,
+  },
+  withdrawApplicationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#FEF3C7',
+    gap: 6,
+  },
+  withdrawApplicationText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#DC2626',
   },
 });

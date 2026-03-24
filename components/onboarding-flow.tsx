@@ -190,7 +190,17 @@ export function OnboardingFlow({ onComplete, startAtAuth = false }: OnboardingFl
           options: { data: { full_name: fullName } },
         });
         if (res?.error) throw res.error;
-        await ensureProfile(res?.data?.user, true);
+        // When email confirmation is required Supabase may not return a user/session.
+        // Don't try to create a profile or advance the flow until the user has
+        // confirmed their email and has an active session.
+        const signedUpUser = res?.data?.user;
+        if (!signedUpUser) {
+          setMessage('Sign-up successful. Check your email to confirm your account before signing in.');
+          // Keep the user on the auth step so they can confirm and then sign in
+          setFlowStep('auth');
+          return;
+        }
+        await ensureProfile(signedUpUser, true);
         setIsNewUser(true);
         // New user -> show plans
         setFlowStep('plans');
@@ -207,7 +217,13 @@ export function OnboardingFlow({ onComplete, startAtAuth = false }: OnboardingFl
         }
       }
     } catch (err: any) {
-      setMessage(err?.message ?? String(err));
+      const raw = err?.message ?? String(err);
+      const lower = String(raw).toLowerCase();
+      if (lower.includes('rate limit') || lower.includes('too many') || lower.includes('429') || lower.includes('email rate')) {
+        setMessage('Email rate limit exceeded. Please wait a few minutes and try again, or use a different email.');
+      } else {
+        setMessage(raw);
+      }
     } finally {
       setLoading(false);
     }

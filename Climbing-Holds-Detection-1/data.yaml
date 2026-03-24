@@ -1,0 +1,20 @@
+names:
+- Pink
+- black
+- blue
+- green
+- orange
+- purple
+- red
+- white
+- yellow
+nc: 9
+roboflow:
+  license: CC BY 4.0
+  project: climbing-holds-detection-n7bmb
+  url: https://universe.roboflow.com/isira/climbing-holds-detection-n7bmb/dataset/1
+  version: 1
+  workspace: isira
+test: ../test/images
+train: ../train/images
+val: ../valid/images

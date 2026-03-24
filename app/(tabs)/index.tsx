@@ -10,6 +10,9 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
+import { useHoldDetection } from '@/hooks/use-hold-detection';
+import HoldDetectionOverlay, { HoldDetectionSummary } from '@/components/hold-detection-overlay';
+import type { DetectedHold } from '@/lib/hold-detection';
 
 import { Modal, Platform, StyleSheet, TextInput, TouchableOpacity, Text, FlatList, Alert, ActionSheetIOS, ActivityIndicator, ScrollView, Dimensions } from 'react-native';
 
@@ -51,7 +54,23 @@ export default function HomeScreen() {
   const [betaLoading, setBetaLoading] = useState(false);
   const [betaText, setBetaText] = useState('');
   const [betaError, setBetaError] = useState('');
-  const [betaRoute, setBetaRoute] = useState<{ name: string; image?: string } | null>(null);
+  const [betaRoute, setBetaRoute] = useState<{ name: string; image?: string; holds_detected?: DetectedHold[] } | null>(null);
+
+  // Hold detection hook
+  const {
+    isDetecting,
+    detection,
+    holds,
+    betaAnalysis,
+    error: holdDetectionError,
+    detect: detectHoldsInImage,
+    detectFromUrl,
+    getAIBeta,
+    reset: resetHoldDetection,
+  } = useHoldDetection();
+
+  // State for showing hold overlay
+  const [showHoldOverlay, setShowHoldOverlay] = useState(false);
 
   // Fetch routes from Supabase
   const fetchRoutes = async () => {
@@ -89,29 +108,62 @@ export default function HomeScreen() {
     setError('');
   };
 
-  // Request AI beta for a route
-  const handleRequestBeta = async (route: { name: string; image?: string }) => {
+  // Request AI beta for a route - now with hold detection!
+  const handleRequestBeta = async (route: { name: string; image?: string; holds_detected?: DetectedHold[] }) => {
     setBetaModalVisible(true);
     setBetaLoading(true);
     setBetaText('');
     setBetaError('');
     setBetaRoute(route);
+    
     try {
-      // Replace this URL with your actual AI endpoint
-      const endpoint = 'https://api.example.com/beta-suggestion';
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: route.name,
-          image: route.image,
-        }),
-      });
-      if (!response.ok) throw new Error('Failed to get beta suggestion');
-      const data = await response.json();
-      setBetaText(data.suggestion || 'No beta suggestion returned.');
+      let holdsToAnalyze: DetectedHold[] = [];
+      
+      // First, try to detect holds in the image
+      if (route.image) {
+        try {
+          const detectionResult = await detectFromUrl(route.image);
+          if (detectionResult && detectionResult.holds.length > 0) {
+            holdsToAnalyze = detectionResult.holds;
+          }
+        } catch (detectionError) {
+          console.log('Hold detection failed, continuing with basic beta:', detectionError);
+        }
+      }
+      
+      // If we have detected holds, use AI beta with hold analysis
+      if (holdsToAnalyze.length > 0) {
+        const betaResult = await getAIBeta({
+          holds: holdsToAnalyze,
+          userHeightCm: 170, // TODO: Get from user profile
+          userApeIndexCm: 0,
+          routeAngle: 'vertical',
+        });
+        
+        if (betaResult?.beta_analysis) {
+          setBetaText(
+            `🎯 Detected ${holdsToAnalyze.length} holds\n\n` +
+            betaResult.beta_analysis
+          );
+        } else {
+          setBetaText(
+            `✅ Detected ${holdsToAnalyze.length} holds on this route.\n\n` +
+            `Beta analysis is currently unavailable. Try again later or check your API configuration.`
+          );
+        }
+      } else {
+        // Fallback: no holds detected
+        setBetaText(
+          `📷 Could not detect holds in this image.\n\n` +
+          `For best results:\n` +
+          `• Take a clear photo of the climbing wall\n` +
+          `• Ensure good lighting\n` +
+          `• Include the full route in frame\n\n` +
+          `Route: ${route.name}`
+        );
+      }
     } catch (e: any) {
-      setBetaError(e.message || 'Failed to get beta suggestion.');
+      setBetaError(e.message || 'Failed to analyze route. Please try again.');
     }
     setBetaLoading(false);
   };
@@ -185,6 +237,7 @@ export default function HomeScreen() {
           name: newRoute.trim(),
           image: imageUrl,
           grade: selectedGrade,
+          holds_detected: holds.length > 0 ? holds : null,
         })
         .eq('id', routeToEdit.id);
       if (error) {
@@ -199,6 +252,7 @@ export default function HomeScreen() {
         name: newRoute.trim(),
         image: imageUrl,
         grade: selectedGrade,
+        holds_detected: holds.length > 0 ? holds : null,
       };
       console.log('Inserting data:', JSON.stringify(insertData));
       const { data, error } = await supabase
@@ -214,6 +268,8 @@ export default function HomeScreen() {
     setNewRoute('');
     setNewImage(undefined);
     setModalVisible(false);
+    resetHoldDetection();
+    setShowHoldOverlay(false);
     fetchRoutes();
   };
 
@@ -608,16 +664,75 @@ export default function HomeScreen() {
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Photo</Text>
                 {newImage ? (
-                  <View style={styles.photoPreview}>
-                    <ExpoImage
-                      source={{ uri: newImage }}
-                      style={styles.photoPreviewImage}
-                      contentFit="cover"
-                    />
-                    <TouchableOpacity style={styles.photoChangeButton} onPress={handleImageSelect}>
-                      <Ionicons name="camera" size={16} color="#FFF" />
-                      <Text style={styles.photoChangeText}>Change</Text>
-                    </TouchableOpacity>
+                  <View style={styles.photoPreviewContainer}>
+                    <View style={styles.photoPreview}>
+                      <ExpoImage
+                        source={{ uri: newImage }}
+                        style={styles.photoPreviewImage}
+                        contentFit="cover"
+                      />
+                      {/* Hold Detection Overlay */}
+                      {showHoldOverlay && holds.length > 0 && detection && (
+                        <HoldDetectionOverlay
+                          holds={holds}
+                          imageWidth={detection.image_width}
+                          imageHeight={detection.image_height}
+                          displayWidth={160}
+                          displayHeight={160}
+                          showLabels={false}
+                        />
+                      )}
+                      <TouchableOpacity style={styles.photoChangeButton} onPress={handleImageSelect}>
+                        <Ionicons name="camera" size={16} color="#FFF" />
+                        <Text style={styles.photoChangeText}>Change</Text>
+                      </TouchableOpacity>
+                    </View>
+                    
+                    {/* Hold Detection Actions */}
+                    <View style={styles.holdDetectionActions}>
+                      {isDetecting ? (
+                        <View style={styles.detectingContainer}>
+                          <ActivityIndicator size="small" color="#1e4620" />
+                          <Text style={styles.detectingText}>Detecting holds...</Text>
+                        </View>
+                      ) : holds.length > 0 ? (
+                        <View style={styles.holdsDetectedContainer}>
+                          <View style={styles.holdsDetectedBadge}>
+                            <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
+                            <Text style={styles.holdsDetectedText}>{holds.length} holds detected</Text>
+                          </View>
+                          <TouchableOpacity 
+                            style={styles.toggleOverlayButton}
+                            onPress={() => setShowHoldOverlay(!showHoldOverlay)}
+                          >
+                            <Ionicons 
+                              name={showHoldOverlay ? "eye-off-outline" : "eye-outline"} 
+                              size={16} 
+                              color="#1e4620" 
+                            />
+                            <Text style={styles.toggleOverlayText}>
+                              {showHoldOverlay ? 'Hide' : 'Show'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <TouchableOpacity 
+                          style={styles.detectHoldsButton}
+                          onPress={async () => {
+                            if (newImage) {
+                              await detectHoldsInImage(newImage);
+                              setShowHoldOverlay(true);
+                            }
+                          }}
+                        >
+                          <Ionicons name="scan-outline" size={18} color="#FFF" />
+                          <Text style={styles.detectHoldsText}>Detect Holds</Text>
+                        </TouchableOpacity>
+                      )}
+                      {holdDetectionError && (
+                        <Text style={styles.holdDetectionError}>{holdDetectionError}</Text>
+                      )}
+                    </View>
                   </View>
                 ) : (
                   <TouchableOpacity style={styles.photoAddButton} onPress={handleImageSelect}>
@@ -625,7 +740,7 @@ export default function HomeScreen() {
                       <Ionicons name="camera-outline" size={28} color="#1e4620" />
                     </View>
                     <Text style={styles.photoAddText}>Add a photo of the route</Text>
-                    <Text style={styles.photoAddHint}>Helps with AI beta suggestions</Text>
+                    <Text style={styles.photoAddHint}>Enables AI hold detection & beta suggestions</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -661,6 +776,8 @@ export default function HomeScreen() {
                   setNewRoute('');
                   setNewImage(undefined);
                   setSelectedGrade('');
+                  resetHoldDetection();
+                  setShowHoldOverlay(false);
                 }}
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
@@ -1348,5 +1465,88 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -50,
     right: 0,
+  },
+
+  // Hold Detection Styles
+  photoPreviewContainer: {
+    gap: 12,
+  },
+  holdDetectionActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  detectingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
+  detectingText: {
+    color: '#64748B',
+    fontSize: 14,
+  },
+  holdsDetectedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flex: 1,
+  },
+  holdsDetectedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  holdsDetectedText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#059669',
+  },
+  toggleOverlayButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  toggleOverlayText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#1e4620',
+  },
+  detectHoldsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#1e4620',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    shadowColor: '#1e4620',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  detectHoldsText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  holdDetectionError: {
+    color: '#EF4444',
+    fontSize: 12,
+    marginTop: 4,
+    width: '100%',
   },
 });

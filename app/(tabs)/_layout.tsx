@@ -16,10 +16,16 @@ import { supabase } from '@/lib/supabase';
 export { resetOnboarding };
 
 const SKIP_TO_AUTH_KEY = '@cruxly_skip_to_auth';
+const ROUTE_SETTER_REFRESH_KEY = '@cruxly_route_setter_refresh';
 
 // Call this before signing out to skip intro slides
 export async function setSkipToAuthOnSignOut() {
   await AsyncStorage.setItem(SKIP_TO_AUTH_KEY, 'true');
+}
+
+// Call this after becoming a route setter to trigger tab refresh
+export async function triggerRouteSetterRefresh() {
+  await AsyncStorage.setItem(ROUTE_SETTER_REFRESH_KEY, Date.now().toString());
 }
 
 export default function TabLayout() {
@@ -28,7 +34,26 @@ export default function TabLayout() {
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [skipToAuth, setSkipToAuth] = useState(false); // Skip intro slides on sign out
+  const [isRouteSetter, setIsRouteSetter] = useState(false);
   const router = useRouter();
+
+  // Load route setter status from database
+  const loadRouteSetterStatus = async (userId?: string) => {
+    try {
+      const uid = userId || (await supabase.auth.getUser()).data?.user?.id;
+      if (!uid) return;
+      
+      const { data } = await supabase
+        .from('profiles')
+        .select('is_route_setter')
+        .eq('id', uid)
+        .single();
+      
+      setIsRouteSetter(data?.is_route_setter || false);
+    } catch (e) {
+      // Ignore errors - default to false
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -62,6 +87,8 @@ export default function TabLayout() {
           setShowOnboarding(true);
         } else {
           setShowOnboarding(false);
+          // Load route setter status for existing session
+          await loadRouteSetterStatus(currentSession.user?.id);
         }
 
         setIsLoading(false);
@@ -90,13 +117,24 @@ export default function TabLayout() {
           await AsyncStorage.removeItem(SKIP_TO_AUTH_KEY);
           setSkipToAuth(true);
         }
+        setIsRouteSetter(false);
         // Always show onboarding when signed out - user needs to log in
         setShowOnboarding(true);
       }
     });
 
+    // Check for route setter refresh trigger periodically
+    const refreshInterval = setInterval(async () => {
+      const refreshKey = await AsyncStorage.getItem(ROUTE_SETTER_REFRESH_KEY);
+      if (refreshKey) {
+        await AsyncStorage.removeItem(ROUTE_SETTER_REFRESH_KEY);
+        await loadRouteSetterStatus();
+      }
+    }, 1000);
+
     return () => {
       mounted = false;
+      clearInterval(refreshInterval);
       try {
         subscription?.unsubscribe();
       } catch (e) {
@@ -119,13 +157,17 @@ export default function TabLayout() {
     return (
       <OnboardingFlow
         startAtAuth={skipToAuth}
-        onComplete={() => {
+        onComplete={async () => {
           // Refresh session and hide onboarding
           setSkipToAuth(false);
-          supabase.auth.getSession().then((res: any) => {
-            setSession(res?.data?.session ?? null);
-            setShowOnboarding(false);
-          });
+          const res = await supabase.auth.getSession();
+          const newSession = res?.data?.session ?? null;
+          setSession(newSession);
+          // Load route setter status for the newly authenticated user
+          if (newSession?.user?.id) {
+            await loadRouteSetterStatus(newSession.user.id);
+          }
+          setShowOnboarding(false);
         }}
       />
     );
@@ -174,7 +216,7 @@ export default function TabLayout() {
             headerShown: false,
             tabBarIcon: ({ color, focused }) => (
               <View style={{ 
-                backgroundColor: focused ? 'rgba(30, 70, 32, 0.15)' : 'transparent',
+                // backgroundColor: focused ? 'rgba(30, 70, 32, 0.15)' : 'transparent',
                 padding: focused ? 14 : 8,
                 borderRadius: 14,
               }}>
@@ -190,7 +232,7 @@ export default function TabLayout() {
             headerShown: false,
             tabBarIcon: ({ color, focused }) => (
               <View style={{
-                backgroundColor: focused ? 'rgba(30, 70, 32, 0.15)' : 'transparent',
+                // backgroundColor: focused ? 'rgba(30, 70, 32, 0.15)' : 'transparent',
                 padding: focused ? 14 : 8,
                 borderRadius: 14,
               }}>
@@ -204,11 +246,13 @@ export default function TabLayout() {
           options={{
             title: '',
             headerShown: false,
+            href: isRouteSetter ? '/explore' : null, // Only visible to route setters
             tabBarIcon: ({ color, focused }) => (
               <View style={{
-                backgroundColor: focused ? 'rgba(30, 70, 32, 0.15)' : 'transparent',
+                // backgroundColor: focused ? 'rgba(30, 70, 32, 0.15)' : 'transparent',
                 padding: focused ? 14 : 8,
                 borderRadius: 14,
+                marginTop: 10, // Adjust for icon visual alignment
               }}>
                 <IconSymbol size={28} name="mappin.and.ellipse.circle" color={color} />
               </View>
@@ -222,7 +266,7 @@ export default function TabLayout() {
             headerShown: false,
             tabBarIcon: ({ color, focused }) => (
               <View style={{
-                backgroundColor: focused ? 'rgba(30, 70, 32, 0.15)' : 'transparent',
+                // backgroundColor: focused ? 'rgba(30, 70, 32, 0.15)' : 'transparent',
                 padding: focused ? 14 : 8,
                 borderRadius: 14,
               }}>

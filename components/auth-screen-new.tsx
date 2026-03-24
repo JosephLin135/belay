@@ -92,7 +92,15 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
           options: { data: { full_name: fullName } },
         });
         if (res?.error) throw res.error;
-        await ensureProfile(res?.data?.user);
+        // If Supabase requires email confirmation, signUp may not return a user/session.
+        // In that case, prompt the user to confirm their email instead of attempting
+        // to create a profile or proceed as if signed in.
+        const signedUpUser = res?.data?.user;
+        if (!signedUpUser) {
+          setMessage('Sign-up successful. Check your email to confirm your account before signing in.');
+          return;
+        }
+        await ensureProfile(signedUpUser);
         setMessage('Welcome aboard! Check your email to confirm.');
         onSignedIn?.();
       } else {
@@ -103,7 +111,13 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
         onSignedIn?.();
       }
     } catch (err: any) {
-      setMessage(err?.message ?? String(err));
+      const raw = err?.message ?? String(err);
+      const lower = String(raw).toLowerCase();
+      if (lower.includes('rate limit') || lower.includes('too many') || lower.includes('429') || lower.includes('email rate')) {
+        setMessage('Email rate limit exceeded. Please wait a few minutes and try again, or use a different email.');
+      } else {
+        setMessage(raw);
+      }
     } finally {
       setLoading(false);
     }

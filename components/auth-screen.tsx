@@ -110,7 +110,13 @@ export function AuthScreen({ onSignedIn }: { onSignedIn?: () => void }) {
         onSignedIn?.();
       }
     } catch (err: any) {
-      setMessage(err?.message ?? String(err));
+      const raw = err?.message ?? String(err);
+      const lower = String(raw).toLowerCase();
+      if (lower.includes('rate limit') || lower.includes('too many') || lower.includes('429') || lower.includes('email rate')) {
+        setMessage('Email rate limit exceeded. Please wait a few minutes and try again, or use a different email.');
+      } else {
+        setMessage(raw);
+      }
     } finally {
       setLoading(false);
     }
