@@ -72,7 +72,7 @@ Starting in 3 seconds...
         from hold_detection_trainer import HoldDetector
     except ImportError:
         print("❌ Error: hold_detection_trainer.py not found in current directory")
-        print("Make sure you have hold_detection_trainer.py in the same folder")
+        print("Make sure hold_detection_trainer.py is in the backend/ folder")
         sys.exit(1)
     
     print("\n" + "="*70)
@@ -149,11 +149,11 @@ NEXT STEPS:
 
 2. Integrate with FastAPI backend:
    - Copy best.pt to your backend: models/hold_detector_best.pt
-   - Use the fastapi_hold_detection.py endpoints
+   - Use the hold_detection_api.py endpoints
    - Deploy to production
 
 3. Add to Cruxly mobile app:
-   - Use HoldDetectionScreen.tsx component
+   - Use components/hold-detection-overlay.tsx
    - Point API_URL to your backend
 
 MODEL PERFORMANCE TIPS:

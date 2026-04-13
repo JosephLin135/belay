@@ -12,10 +12,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Svg, Path, Circle, Defs, LinearGradient, Stop, G } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
+import { LoadingScreen } from '@/components/loading-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MembershipScreen, PLANS, Plan, PlanId, savePlanSelection } from '@/components/membership-screen';
 
 const { width, height } = Dimensions.get('window');
+const PLAN_SNAP_INTERVAL = width * 0.7;
 
 const ONBOARDING_KEY = '@cruxly_onboarding_complete';
 
@@ -23,24 +25,24 @@ const ONBOARDING_KEY = '@cruxly_onboarding_complete';
 const slides = [
   {
     id: 1,
-    title: 'Cruxly',
+    title: 'cruxly',
     subtitle: 'Your all-in-one climbing companion',
     description: 'Connect with climbers and discover new routes!',
     gradient: ['#1e4620', '#449e'],
   },
   {
     id: 2,
-    title: 'Find Your Crew',
-    subtitle: 'Never climb alone',
-    description: 'Meet climbers at your level, join local communities, annd organize sessions!',
-    gradient: ['#1e4620', '#449e'],
-  },
-  {
-    id: 3,
     icon: 'sparkles-outline',
     title: 'AI Insights',
     subtitle: 'Climb smarter, not harder',
     description: 'Analyze your climbs with AI and level up faster!',
+    gradient: ['#1e4620', '#449e'],
+  },
+  {
+    id: 3,
+    title: 'Find Your Crew',
+    subtitle: 'Never climb alone',
+    description: 'Meet climbers at your level, join local communities, annd organize sessions!',
     gradient: ['#1e4620', '#449e'],
   },
   {
@@ -63,6 +65,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [selectedPlanId, setSelectedPlanId] = useState<PlanId>('free');
   const [showMembershipModal, setShowMembershipModal] = useState(false);
+  const [showTestLoader, setShowTestLoader] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -122,9 +125,24 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
     setSelectedPlanId(planId);
   };
 
+  const handlePlanCarouselScroll = (event: any) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.max(0, Math.min(PLANS.length - 1, Math.round(offsetX / PLAN_SNAP_INTERVAL)));
+    const focusedPlan = PLANS[index];
+    if (focusedPlan && focusedPlan.id !== selectedPlanId) {
+      setSelectedPlanId(focusedPlan.id);
+    }
+  };
+
   const handleMembershipConfirm = async (plan: Plan) => {
     setShowMembershipModal(false);
     await handleComplete();
+  };
+
+  const handleTestRefresh = () => {
+    setShowTestLoader(true);
+    // Briefly hold visible, then trigger fade out animation.
+    setTimeout(() => setShowTestLoader(false), 250);
   };
 
   const renderPlanCard = (plan: Plan) => {
@@ -182,8 +200,9 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.plansScroll}
-              snapToInterval={width * 0.7}
+              snapToInterval={PLAN_SNAP_INTERVAL}
               decelerationRate="fast"
+              onMomentumScrollEnd={handlePlanCarouselScroll}
             >
               {PLANS.map(renderPlanCard)}
             </ScrollView>
@@ -228,6 +247,13 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
             <ThemedText style={styles.skipText}>Skip</ThemedText>
           </TouchableOpacity>
         )}
+
+        {__DEV__ ? (
+          <TouchableOpacity style={styles.refreshButton} onPress={handleTestRefresh}>
+            <Ionicons name="refresh" size={14} color="#FFFFFF" />
+            <ThemedText style={styles.refreshButtonText}>Refresh</ThemedText>
+          </TouchableOpacity>
+        ) : null}
 
         {/* Slides */}
         <ScrollView
@@ -288,6 +314,8 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
         onClose={() => setShowMembershipModal(false)}
         onConfirm={handleMembershipConfirm}
       />
+
+      {__DEV__ ? <LoadingScreen visible={showTestLoader} /> : null}
     </View>
   );
 }
@@ -330,6 +358,24 @@ const styles = StyleSheet.create({
     color: '#449e',
     fontSize: 16,
     fontWeight: '600',
+  },
+  refreshButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 20,
+    left: 24,
+    zIndex: 10,
+    backgroundColor: '#1e4620',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  refreshButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   scrollView: {
     flex: 1,

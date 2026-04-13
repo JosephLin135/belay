@@ -313,7 +313,7 @@ export default function HomeScreen() {
             if (permission.granted) {
               const result = await ImagePicker.launchCameraAsync({
                 quality: 1,
-                allowsEditing: true,
+                allowsEditing: false,
               });
               if (!result.canceled && result.assets.length > 0) {
                 setNewImage(result.assets[0].uri);
@@ -323,7 +323,7 @@ export default function HomeScreen() {
             const result = await ImagePicker.launchImageLibraryAsync({
               mediaTypes: ['images'],
               quality: 1,
-              allowsEditing: true,
+              allowsEditing: false,
             });
             if (!result.canceled && result.assets.length > 0) {
               setNewImage(result.assets[0].uri);
@@ -341,7 +341,7 @@ export default function HomeScreen() {
               if (permission.granted) {
                 const result = await ImagePicker.launchCameraAsync({
                   quality: 1,
-                  allowsEditing: true,
+                  allowsEditing: false,
                 });
                 if (!result.canceled && result.assets.length > 0) {
                   setNewImage(result.assets[0].uri);
@@ -353,7 +353,7 @@ export default function HomeScreen() {
               const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ['images'],
                 quality: 1,
-                allowsEditing: true,
+                allowsEditing: false,
               });
               if (!result.canceled && result.assets.length > 0) {
                 setNewImage(result.assets[0].uri);
@@ -1451,20 +1451,25 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.92)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 24,
   },
   enlargedImageContainer: {
+    width: '100%',
+    height: '100%',
     position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   enlargedImage: {
-    width: screenWidth - 40,
-    height: screenWidth - 40,
+    width: '100%',
+    height: '100%',
     borderRadius: 16,
   },
   enlargedImageClose: {
     position: 'absolute',
-    top: -50,
-    right: 0,
+    top: 4,
+    right: 4,
   },
 
   // Hold Detection Styles

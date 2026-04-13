@@ -5,7 +5,7 @@ Run with: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi_hold_detection import router as hold_detection_router
+from hold_detection_api import router as hold_detection_router
 
 app = FastAPI(
     title="Cruxly Hold Detection API",

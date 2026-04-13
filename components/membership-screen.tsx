@@ -38,6 +38,14 @@ export interface Plan {
   stripePriceId?: string;
 }
 
+const STRIPE_PRICE_IDS = {
+  weekly: process.env.EXPO_PUBLIC_STRIPE_PRICE_WEEKLY,
+  monthly: process.env.EXPO_PUBLIC_STRIPE_PRICE_MONTHLY,
+  yearly: process.env.EXPO_PUBLIC_STRIPE_PRICE_YEARLY,
+};
+
+const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+
 export const PLANS: Plan[] = [
   {
     id: 'free',
@@ -71,7 +79,7 @@ export const PLANS: Plan[] = [
       'Early access to new features',
     ],
     highlighted: false,
-    stripePriceId: 'price_weekly_placeholder',
+    stripePriceId: STRIPE_PRICE_IDS.weekly,
   },
   {
     id: 'monthly',
@@ -86,11 +94,10 @@ export const PLANS: Plan[] = [
       'Advanced analytics & insights',
       'Priority support',
       'Custom training plans',
-      'Exclusive Pro badge',
     ],
     highlighted: true,
     badge: 'MOST POPULAR',
-    stripePriceId: 'price_monthly_placeholder',
+    stripePriceId: STRIPE_PRICE_IDS.monthly,
   },
   {
     id: 'yearly',
@@ -109,7 +116,7 @@ export const PLANS: Plan[] = [
     ],
     highlighted: false,
     badge: 'BEST VALUE',
-    stripePriceId: 'price_yearly_placeholder',
+    stripePriceId: STRIPE_PRICE_IDS.yearly,
   },
 ];
 
@@ -170,8 +177,12 @@ export function MembershipScreen({ visible, selectedPlan, onClose, onConfirm }: 
   };
 
   const startPaidCheckout = async () => {
+    if (!STRIPE_PUBLISHABLE_KEY) {
+      throw new Error('Missing EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY in app env configuration.');
+    }
+
     if (!selectedPlan.stripePriceId) {
-      throw new Error('Stripe price is missing for this plan.');
+      throw new Error(`Stripe price is missing for ${selectedPlan.id}. Set EXPO_PUBLIC_STRIPE_PRICE_${selectedPlan.id.toUpperCase()} in .env.local.`);
     }
 
     const redirectUrl = AuthSession.makeRedirectUri({ scheme: 'belay' });

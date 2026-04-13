@@ -28,7 +28,7 @@ interface Post {
   id: string;
   user_id: string;
   user_name: string;
-  user_avatar?: string;
+  user_avatar?: string;   
   category: PostCategory;
   gym_name?: string;
   title: string;
@@ -53,6 +53,34 @@ interface Comment {
 interface TopComment {
   [postId: string]: Comment | null;
 }
+
+interface ViewedUserProfile {
+  id: string;
+  display_name: string;
+  avatar_url?: string;
+  bio?: string;
+  home_gym?: string[] | string;
+  climbing_since?: string;
+  max_grade?: string;
+  preferred_style?: string;
+  instagram_handle?: string;
+  looking_for?: string[];
+}
+
+const LOOKING_FOR_LABELS: Record<string, string> = {
+  climbing_partner: 'Climbing Partners',
+  belay_partner: 'Belay Partners',
+  outdoor_trips: 'Outdoor Trips',
+  training_buddy: 'Training Buddies',
+  beta_advice: 'Beta & Advice',
+};
+
+const CLIMBING_STYLE_LABELS: Record<string, string> = {
+  boulder: 'Bouldering',
+  sport: 'Sport',
+  trad: 'Trad',
+  top_rope: 'Top Rope',
+};
 
 // Category config
 const CATEGORIES: { key: PostCategory; label: string; icon: string; color: string }[] = [
@@ -114,6 +142,11 @@ export default function CommunityScreen() {
   const [editingComment, setEditingComment] = useState<Comment | null>(null);
   const [editCommentContent, setEditCommentContent] = useState('');
   const [showEditCommentModal, setShowEditCommentModal] = useState(false);
+
+  // User profile popup
+  const [showUserProfileModal, setShowUserProfileModal] = useState(false);
+  const [viewedUserProfile, setViewedUserProfile] = useState<ViewedUserProfile | null>(null);
+  const [loadingUserProfile, setLoadingUserProfile] = useState(false);
 
   // Get current user on mount
   useEffect(() => {
@@ -709,6 +742,24 @@ export default function CommunityScreen() {
     setEditCommentContent('');
   };
 
+  const handleViewUserProfile = async (userId: string) => {
+    setViewedUserProfile(null);
+    setLoadingUserProfile(true);
+    setShowUserProfileModal(true);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url, bio, home_gym, climbing_since, max_grade, preferred_style, instagram_handle, looking_for')
+        .eq('id', userId)
+        .single();
+      if (!error && data) setViewedUserProfile(data);
+    } catch {
+      // silent
+    } finally {
+      setLoadingUserProfile(false);
+    }
+  };
+
   const getCategoryConfig = (key: PostCategory) => {
     return CATEGORIES.find(c => c.key === key) || CATEGORIES[0];
   };
@@ -730,13 +781,13 @@ export default function CommunityScreen() {
               <Image source={{ uri: item.user_avatar }} style={styles.avatarImage} />
             ) : (
               <View style={[styles.avatar, { backgroundColor: categoryConfig.color }]}>
-                <Text style={styles.avatarText}>{item.user_name[0].toUpperCase()}</Text>
+                <Text style={styles.avatarText}>{(item.user_name || '?')[0].toUpperCase()}</Text>
               </View>
             )}
-            <View>
+            <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleViewUserProfile(item.user_id); }}>
               <Text style={styles.userName}>{item.user_name}</Text>
               <Text style={styles.postTime}>{timeAgo(item.created_at)}</Text>
-            </View>
+            </TouchableOpacity>
           </View>
           <View style={styles.postHeaderRight}>
             <View style={[styles.categoryBadge, { backgroundColor: categoryConfig.color + '20' }]}>
@@ -1139,13 +1190,13 @@ export default function CommunityScreen() {
                         <Image source={{ uri: selectedPost.user_avatar }} style={styles.detailAvatarImage} />
                       ) : (
                         <View style={[styles.detailAvatar, { backgroundColor: getCategoryConfig(selectedPost.category).color }]}>
-                          <Text style={styles.detailAvatarText}>{selectedPost.user_name[0].toUpperCase()}</Text>
+                          <Text style={styles.detailAvatarText}>{(selectedPost.user_name || '?')[0].toUpperCase()}</Text>
                         </View>
                       )}
-                      <View style={styles.detailUserInfo}>
+                      <TouchableOpacity onPress={() => handleViewUserProfile(selectedPost.user_id)} style={styles.detailUserInfo}>
                         <Text style={styles.detailUserName}>{selectedPost.user_name}</Text>
                         <Text style={styles.detailPostTime}>{timeAgo(selectedPost.created_at)}</Text>
-                      </View>
+                      </TouchableOpacity>
                       {selectedPost.user_id === currentUserId && (
                         <TouchableOpacity
                           style={styles.detailMoreButton}
@@ -1222,14 +1273,14 @@ export default function CommunityScreen() {
                             ) : (
                               <View style={styles.replyAvatar}>
                                 <Text style={styles.replyAvatarText}>
-                                  {comment.user_name[0].toUpperCase()}
+                                  {(comment.user_name || '?')[0].toUpperCase()}
                                 </Text>
                               </View>
                             )}
-                            <View style={styles.replyUserInfo}>
+                            <TouchableOpacity onPress={() => handleViewUserProfile(comment.user_id)} style={styles.replyUserInfo}>
                               <Text style={styles.replyUserName}>{comment.user_name}</Text>
                               <Text style={styles.replyTime}>{timeAgo(comment.created_at)}</Text>
-                            </View>
+                            </TouchableOpacity>
                             {comment.user_id === currentUserId && (
                               <TouchableOpacity
                                 style={styles.replyMoreButton}
@@ -1420,6 +1471,118 @@ export default function CommunityScreen() {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+
+      {/* User Profile Popup — absolute overlay so it works inside other modals */}
+      {showUserProfileModal && (
+        <TouchableOpacity
+          style={styles.userProfileOverlay}
+          activeOpacity={1}
+          onPress={() => setShowUserProfileModal(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.userProfileModal}>
+            <View style={styles.userProfileModalHandle} />
+            {loadingUserProfile ? (
+              <View style={styles.userProfileLoading}>
+                <ActivityIndicator size="large" color="#1e4620" />
+              </View>
+            ) : viewedUserProfile ? (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+                {/* Avatar + Name + Bio */}
+                <View style={styles.userProfileHeader}>
+                  {viewedUserProfile.avatar_url ? (
+                    <Image source={{ uri: viewedUserProfile.avatar_url }} style={styles.userProfileAvatar} />
+                  ) : (
+                    <View style={styles.userProfileAvatarPlaceholder}>
+                      <Text style={styles.userProfileAvatarText}>
+                        {(viewedUserProfile.display_name || '?')[0].toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={styles.userProfileDisplayName}>{viewedUserProfile.display_name || 'Climber'}</Text>
+                  {viewedUserProfile.bio ? (
+                    <Text style={styles.userProfileBio}>{viewedUserProfile.bio}</Text>
+                  ) : null}
+                </View>
+
+                {/* Quick Stats */}
+                {(viewedUserProfile.max_grade || viewedUserProfile.climbing_since || viewedUserProfile.preferred_style) && (
+                  <View style={styles.userProfileStats}>
+                    {viewedUserProfile.max_grade && (
+                      <View style={styles.userProfileStat}>
+                        <Text style={styles.userProfileStatValue}>{viewedUserProfile.max_grade}</Text>
+                        <Text style={styles.userProfileStatLabel}>Max Grade</Text>
+                      </View>
+                    )}
+                    {viewedUserProfile.climbing_since && !isNaN(parseInt(viewedUserProfile.climbing_since)) && (
+                      <View style={styles.userProfileStat}>
+                        <Text style={styles.userProfileStatValue}>
+                          {new Date().getFullYear() - parseInt(viewedUserProfile.climbing_since)}y
+                        </Text>
+                        <Text style={styles.userProfileStatLabel}>Climbing</Text>
+                      </View>
+                    )}
+                    {viewedUserProfile.preferred_style && (
+                      <View style={styles.userProfileStat}>
+                        <Text style={styles.userProfileStatValue}>
+                          {CLIMBING_STYLE_LABELS[viewedUserProfile.preferred_style] || viewedUserProfile.preferred_style}
+                        </Text>
+                        <Text style={styles.userProfileStatLabel}>Style</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* Details */}
+                <View style={styles.userProfileDetails}>
+                  {viewedUserProfile.home_gym && (Array.isArray(viewedUserProfile.home_gym) ? viewedUserProfile.home_gym.length > 0 : true) && (
+                    <View style={styles.userProfileDetailRow}>
+                      <View style={styles.userProfileDetailIcon}>
+                        <Ionicons name="location" size={18} color="#1e4620" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.userProfileDetailLabel}>Home Gym(s)</Text>
+                        <Text style={styles.userProfileDetailValue}>
+                          {(Array.isArray(viewedUserProfile.home_gym) ? viewedUserProfile.home_gym : [viewedUserProfile.home_gym]).join(' · ')}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                  {viewedUserProfile.instagram_handle && (
+                    <View style={styles.userProfileDetailRow}>
+                      <View style={styles.userProfileDetailIcon}>
+                        <Ionicons name="logo-instagram" size={18} color="#1e4620" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.userProfileDetailLabel}>Instagram</Text>
+                        <Text style={styles.userProfileDetailValue}>@{viewedUserProfile.instagram_handle}</Text>
+                      </View>
+                    </View>
+                  )}
+                  {Array.isArray(viewedUserProfile.looking_for) && viewedUserProfile.looking_for.length > 0 && (
+                    <View style={styles.userProfileDetailRow}>
+                      <View style={styles.userProfileDetailIcon}>
+                        <Ionicons name="search" size={18} color="#1e4620" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.userProfileDetailLabel}>Looking For</Text>
+                        <View style={styles.userProfileLookingForChips}>
+                          {viewedUserProfile.looking_for.map((key) => (
+                            <View key={key} style={styles.userProfileLookingForChip}>
+                              <Text style={styles.userProfileLookingForChipText}>
+                                {LOOKING_FOR_LABELS[key] || key}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </ScrollView>
+            ) : null}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -2332,5 +2495,150 @@ const styles = StyleSheet.create({
   },
   commentSendButtonDisabled: {
     backgroundColor: '#E2E8F0',
+  },
+
+  // User Profile Modal
+  userProfileOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    justifyContent: 'flex-end',
+    zIndex: 9999,
+  },
+  userProfileModal: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: '82%',
+    width: '100%',
+    paddingTop: 8,
+    paddingHorizontal: 20,
+  },
+  userProfileModalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  userProfileLoading: {
+    paddingVertical: 60,
+    alignItems: 'center',
+  },
+  userProfileHeader: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    marginBottom: 4,
+  },
+  userProfileAvatar: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    marginBottom: 12,
+  },
+  userProfileAvatarPlaceholder: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#1e4620',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  userProfileAvatarText: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  userProfileDisplayName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 6,
+  },
+  userProfileBio: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: 16,
+  },
+  userProfileStats: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 28,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  userProfileStat: {
+    alignItems: 'center',
+  },
+  userProfileStatValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1e4620',
+  },
+  userProfileStatLabel: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  userProfileDetails: {
+    paddingTop: 4,
+  },
+  userProfileDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8FAFC',
+    gap: 12,
+  },
+  userProfileDetailIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 1,
+  },
+  userProfileDetailLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 3,
+  },
+  userProfileDetailValue: {
+    fontSize: 14,
+    color: '#1E293B',
+    fontWeight: '500',
+    lineHeight: 20,
+  },
+  userProfileLookingForChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 2,
+  },
+  userProfileLookingForChip: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  userProfileLookingForChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4F46E5',
   },
 });

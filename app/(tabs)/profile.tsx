@@ -22,7 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import * as FileSystem from 'expo-file-system/legacy';
-import { resetOnboarding } from '@/components/onboarding-flow';
+import { resetOnboarding } from '@/components/onboarding-screen';
 import { setSkipToAuthOnSignOut, triggerRouteSetterRefresh } from '@/app/(tabs)/_layout';
 import { 
   getSavedPlan, 
@@ -151,6 +151,7 @@ export default function ProfileScreen() {
   const [lookingFor, setLookingFor] = useState<string[]>([]);
   
   // UI State
+  const [profileTab, setProfileTab] = useState<'identity' | 'climbing'>('identity');
   const [showGradePicker, setShowGradePicker] = useState(false);
   const [showGymSearch, setShowGymSearch] = useState(false);
   const [gymSearchQuery, setGymSearchQuery] = useState('');
@@ -239,7 +240,7 @@ export default function ProfileScreen() {
 
       if (profileData) {
         setProfile(profileData);
-        setName(profileData.name || '');
+        setName(profileData.name || user.user_metadata?.full_name || user.user_metadata?.name || '');
         setDisplayName(profileData.display_name || '');
         setAvatarUrl(profileData.avatar_url || null);
         setBio(profileData.bio || '');
@@ -767,15 +768,15 @@ export default function ProfileScreen() {
               <Text style={styles.statNumber}>{stats.comments_count}</Text>
               <Text style={styles.statLabel}>Replies</Text>
             </View>
-            <View style={styles.statDivider} />
+            {/* <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statNumber}>{stats.likes_given}</Text>
               <Text style={styles.statLabel}>Liked</Text>
-            </View>
+            </View> */}
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statNumber}>{stats.likes_received}</Text>
-              <Text style={styles.statLabel}>Received</Text>
+              <Text style={styles.statLabel}>Likes</Text>
             </View>
           </View>
         </View>
@@ -783,217 +784,203 @@ export default function ProfileScreen() {
         {/* Edit Profile Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Community Profile</Text>
-          <Text style={styles.sectionSubtitle}>This is how you appear in discussions</Text>
 
-          {/* Name */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Name</Text>
-            <View style={styles.formInputWrapper}>
-              <Ionicons name="person" size={20} color="#94A3B8" />
-              <TextInput
-                style={styles.formInput}
-                placeholder="Your real name"
-                placeholderTextColor="#94A3B8"
-                value={name}
-                onChangeText={setName}
-                maxLength={50}
-              />
-            </View>
-          </View>
-
-          {/* Display Name */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Display Name</Text>
-            <View style={styles.formInputWrapper}>
-              <Ionicons name="person-outline" size={20} color="#94A3B8" />
-              <TextInput
-                style={styles.formInput}
-                placeholder="Your climbing alias"
-                placeholderTextColor="#94A3B8"
-                value={displayName}
-                onChangeText={setDisplayName}
-                maxLength={30}
-              />
-            </View>
-          </View>
-
-          {/* Bio */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Bio</Text>
-            <View style={[styles.formInputWrapper, styles.textAreaWrapper]}>
-              <TextInput
-                style={[styles.formInput, styles.textArea]}
-                placeholder="Tell the community about yourself..."
-                placeholderTextColor="#94A3B8"
-                value={bio}
-                onChangeText={setBio}
-                multiline
-                maxLength={200}
-              />
-            </View>
-            <Text style={styles.charCount}>{bio.length}/200</Text>
-          </View>
-
-          {/* Home Gyms - Multiple with search */}
-          <View style={styles.formGroup}>
-            <View style={styles.formLabelRow}>
-              <Text style={styles.formLabel}>Home Gyms</Text>
-              <Text style={styles.formLabelHint}>{homeGyms.length}/</Text>
-            </View>
-            
-            {/* Current gyms list */}
-            {homeGyms.map((gym, index) => (
-              <View key={index} style={styles.gymChip}>
-                <Ionicons name="location" size={16} color="#1e4620" />
-                <Text style={styles.gymChipText} numberOfLines={1}>{gym}</Text>
-                <TouchableOpacity onPress={() => removeHomeGym(index)}>
-                  <Ionicons name="close-circle" size={20} color="#94A3B8" />
-                </TouchableOpacity>
-              </View>
-            ))}
-            
-            {/* Add gym button */}
-            {homeGyms.length < 3 && (
-              <TouchableOpacity 
-                style={styles.addGymButton}
-                onPress={() => setShowGymSearch(true)}
-              >
-                <Ionicons name="add-circle-outline" size={20} color="#1e4620" />
-                <Text style={styles.addGymButtonText}>Add a gym</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Preferred Climbing Style */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Preferred Style</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.styleScroll}>
-              {CLIMBING_STYLES.map(style => (
-                <TouchableOpacity
-                  key={style.key}
-                  style={[
-                    styles.styleChip,
-                    preferredStyle === style.key && styles.styleChipSelected,
-                  ]}
-                  onPress={() => setPreferredStyle(preferredStyle === style.key ? '' : style.key)}
-                >
-                  <Ionicons 
-                    name={style.icon as any} 
-                    size={16} 
-                    color={preferredStyle === style.key ? '#FFF' : '#64748B'} 
-                  />
-                  <Text style={[
-                    styles.styleChipText,
-                    preferredStyle === style.key && styles.styleChipTextSelected,
-                  ]}>{style.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Max Grade */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Max Boulder Grade</Text>
-            <TouchableOpacity 
-              style={styles.formInputWrapper}
-              onPress={() => setShowGradePicker(!showGradePicker)}
+          {/* Tab Selector */}
+          <View style={styles.profileTabRow}>
+            <TouchableOpacity
+              style={[styles.profileTabBtn, profileTab === 'identity' && styles.profileTabBtnActive]}
+              onPress={() => setProfileTab('identity')}
             >
-              <Ionicons name="trending-up-outline" size={20} color="#94A3B8" />
-              <Text style={[styles.formInput, !maxGrade && { color: '#94A3B8' }]}>
-                {maxGrade || 'Select your max grade'}
-              </Text>
-              <Ionicons name="chevron-down" size={20} color="#94A3B8" />
+              <Ionicons name="person-outline" size={15} color={profileTab === 'identity' ? '#FFF' : '#64748B'} />
+              <Text style={[styles.profileTabText, profileTab === 'identity' && styles.profileTabTextActive]}>Identity</Text>
             </TouchableOpacity>
-            
-            {showGradePicker && (
-              <View style={styles.gradePicker}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {GRADE_OPTIONS.map(grade => (
+            <TouchableOpacity
+              style={[styles.profileTabBtn, profileTab === 'climbing' && styles.profileTabBtnActive]}
+              onPress={() => setProfileTab('climbing')}
+            >
+              <Ionicons name="trending-up-outline" size={15} color={profileTab === 'climbing' ? '#FFF' : '#64748B'} />
+              <Text style={[styles.profileTabText, profileTab === 'climbing' && styles.profileTabTextActive]}>Climbing</Text>
+            </TouchableOpacity>
+          </View>
+
+          {profileTab === 'identity' ? (
+            <>
+              {/* Name */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Name</Text>
+                <View style={styles.formInputWrapper}>
+                  <Ionicons name="person" size={18} color="#94A3B8" />
+                  <TextInput
+                    style={styles.formInput}
+                    placeholder="Your real name"
+                    placeholderTextColor="#94A3B8"
+                    value={name}
+                    onChangeText={setName}
+                    maxLength={50}
+                  />
+                </View>
+              </View>
+
+              {/* Display Name */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Display Name</Text>
+                <View style={styles.formInputWrapper}>
+                  <Ionicons name="at-outline" size={18} color="#94A3B8" />
+                  <TextInput
+                    style={styles.formInput}
+                    placeholder="Your climbing alias"
+                    placeholderTextColor="#94A3B8"
+                    value={displayName}
+                    onChangeText={setDisplayName}
+                    maxLength={30}
+                  />
+                </View>
+              </View>
+
+              {/* Bio */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Bio</Text>
+                <View style={[styles.formInputWrapper, styles.textAreaWrapper]}>
+                  <TextInput
+                    style={[styles.formInput, styles.textArea]}
+                    placeholder="Tell the community about yourself..."
+                    placeholderTextColor="#94A3B8"
+                    value={bio}
+                    onChangeText={setBio}
+                    multiline
+                    maxLength={200}
+                  />
+                </View>
+                <Text style={styles.charCount}>{bio.length}/200</Text>
+              </View>
+            </>
+          ) : (
+            <>
+              {/* Home Gyms */}
+              <View style={styles.formGroup}>
+                <View style={styles.formLabelRow}>
+                  <Text style={styles.formLabel}>Home Gym(s)</Text>
+                  <Text style={styles.formLabelHint}>{homeGyms.length}/3</Text>
+                </View>
+                {homeGyms.map((gym, index) => (
+                  <View key={index} style={styles.gymChip}>
+                    <Ionicons name="location" size={16} color="#1e4620" />
+                    <Text style={styles.gymChipText} numberOfLines={1}>{gym}</Text>
+                    <TouchableOpacity onPress={() => removeHomeGym(index)}>
+                      <Ionicons name="close-circle" size={20} color="#94A3B8" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {homeGyms.length < 3 && (
+                  <TouchableOpacity style={styles.addGymButton} onPress={() => setShowGymSearch(true)}>
+                    <Ionicons name="add-circle-outline" size={20} color="#1e4620" />
+                    <Text style={styles.addGymButtonText}>Add a gym</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Preferred Style */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Preferred Style</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.styleScroll}>
+                  {CLIMBING_STYLES.map(style => (
                     <TouchableOpacity
-                      key={grade}
-                      style={[
-                        styles.gradeOption,
-                        maxGrade === grade && styles.gradeOptionSelected,
-                      ]}
-                      onPress={() => {
-                        setMaxGrade(grade);
-                        setShowGradePicker(false);
-                      }}
+                      key={style.key}
+                      style={[styles.styleChip, preferredStyle === style.key && styles.styleChipSelected]}
+                      onPress={() => setPreferredStyle(preferredStyle === style.key ? '' : style.key)}
                     >
-                      <Text style={[
-                        styles.gradeOptionText,
-                        maxGrade === grade && styles.gradeOptionTextSelected,
-                      ]}>{grade}</Text>
+                      <Ionicons name={style.icon as any} size={16} color={preferredStyle === style.key ? '#FFF' : '#64748B'} />
+                      <Text style={[styles.styleChipText, preferredStyle === style.key && styles.styleChipTextSelected]}>{style.label}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
               </View>
-            )}
-          </View>
 
-          {/* Climbing Since */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Climbing Since</Text>
-            <View style={styles.formInputWrapper}>
-              <Ionicons name="calendar-outline" size={20} color="#94A3B8" />
-              <TextInput
-                style={styles.formInput}
-                placeholder="e.g., 2020"
-                placeholderTextColor="#94A3B8"
-                value={climbingSince}
-                onChangeText={setClimbingSince}
-                keyboardType="number-pad"
-                maxLength={4}
-              />
-            </View>
-          </View>
-
-          {/* Instagram Handle */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Instagram</Text>
-            <View style={styles.formInputWrapper}>
-              <Ionicons name="logo-instagram" size={20} color="#94A3B8" />
-              <Text style={styles.atSymbol}>@</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="username"
-                placeholderTextColor="#94A3B8"
-                value={instagramHandle}
-                onChangeText={setInstagramHandle}
-                autoCapitalize="none"
-                autoCorrect={false}
-                maxLength={30}
-              />
-            </View>
-          </View>
-
-          {/* Looking For */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Looking For</Text>
-            <Text style={styles.formHint}>Connect with climbers for...</Text>
-            <View style={styles.lookingForGrid}>
-              {LOOKING_FOR_OPTIONS.map(option => (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[
-                    styles.lookingForChip,
-                    lookingFor.includes(option.key) && styles.lookingForChipSelected,
-                  ]}
-                  onPress={() => toggleLookingFor(option.key)}
-                >
-                  <Ionicons 
-                    name={lookingFor.includes(option.key) ? "checkmark-circle" : "add-circle-outline"} 
-                    size={16} 
-                    color={lookingFor.includes(option.key) ? '#FFF' : '#64748B'} 
-                  />
-                  <Text style={[
-                    styles.lookingForChipText,
-                    lookingFor.includes(option.key) && styles.lookingForChipTextSelected,
-                  ]}>{option.label}</Text>
+              {/* Max Grade */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Max Boulder Grade</Text>
+                <TouchableOpacity style={styles.formInputWrapper} onPress={() => setShowGradePicker(!showGradePicker)}>
+                  <Ionicons name="trending-up-outline" size={18} color="#94A3B8" />
+                  <Text style={[styles.formInput, !maxGrade && { color: '#94A3B8' }]}>
+                    {maxGrade || 'Select your max grade'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={18} color="#94A3B8" />
                 </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+                {showGradePicker && (
+                  <View style={styles.gradePicker}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      {GRADE_OPTIONS.map(grade => (
+                        <TouchableOpacity
+                          key={grade}
+                          style={[styles.gradeOption, maxGrade === grade && styles.gradeOptionSelected]}
+                          onPress={() => { setMaxGrade(grade); setShowGradePicker(false); }}
+                        >
+                          <Text style={[styles.gradeOptionText, maxGrade === grade && styles.gradeOptionTextSelected]}>{grade}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+
+              {/* Climbing Since + Instagram side by side */}
+              <View style={styles.formRow}>
+                <View style={[styles.formGroup, { flex: 1 }]}>
+                  <Text style={styles.formLabel}>Climbing Since</Text>
+                  <View style={styles.formInputWrapper}>
+                    <Ionicons name="calendar-outline" size={18} color="#94A3B8" />
+                    <TextInput
+                      style={styles.formInput}
+                      placeholder="e.g. 2020"
+                      placeholderTextColor="#94A3B8"
+                      value={climbingSince}
+                      onChangeText={setClimbingSince}
+                      keyboardType="number-pad"
+                      maxLength={4}
+                    />
+                  </View>
+                </View>
+                <View style={[styles.formGroup, { flex: 1.5 }]}>
+                  <Text style={styles.formLabel}>Instagram</Text>
+                  <View style={styles.formInputWrapper}>
+                    <Ionicons name="logo-instagram" size={18} color="#94A3B8" />
+                    <Text style={styles.atSymbol}>@</Text>
+                    <TextInput
+                      style={styles.formInput}
+                      placeholder="username"
+                      placeholderTextColor="#94A3B8"
+                      value={instagramHandle}
+                      onChangeText={setInstagramHandle}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      maxLength={30}
+                    />
+                  </View>
+                </View>
+              </View>
+
+              {/* Looking For */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Looking For</Text>
+                <View style={styles.lookingForGrid}>
+                  {LOOKING_FOR_OPTIONS.map(option => (
+                    <TouchableOpacity
+                      key={option.key}
+                      style={[styles.lookingForChip, lookingFor.includes(option.key) && styles.lookingForChipSelected]}
+                      onPress={() => toggleLookingFor(option.key)}
+                    >
+                      <Ionicons
+                        name={lookingFor.includes(option.key) ? 'checkmark-circle' : 'add-circle-outline'}
+                        size={16}
+                        color={lookingFor.includes(option.key) ? '#FFF' : '#64748B'}
+                      />
+                      <Text style={[styles.lookingForChipText, lookingFor.includes(option.key) && styles.lookingForChipTextSelected]}>{option.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </>
+          )}
         </View>
 
         {/* Save Button */}
@@ -1505,11 +1492,11 @@ export default function ProfileScreen() {
                   
                   <View style={styles.formGroup}>
                     <Text style={styles.formLabel}>Route Setting Experience</Text>
-                    <View style={[styles.formInputWrapper, { alignItems: 'flex-start', minHeight: 80 }]}>
+                    <View style={[styles.formInputWrapper, { alignItems: 'flex-start', minHeight: 60 }]}>
                       <Ionicons name="document-text-outline" size={20} color="#94A3B8" style={{ marginTop: 12 }} />
                       <TextInput
                         style={[styles.formInput, { minHeight: 80, textAlignVertical: 'top', paddingTop: 12 }]}
-                        placeholder="How long have you been setting? Any certifications?"
+                        placeholder="How long have you been setting?"
                         placeholderTextColor="#94A3B8"
                         value={appExperience}
                         onChangeText={setAppExperience}
@@ -1772,30 +1759,31 @@ const styles = StyleSheet.create({
 
   // Section
   section: {
-    marginTop: 24,
+    marginTop: 14,
     marginHorizontal: 16,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: '#1E293B',
-    marginBottom: 4,
+    marginBottom: 10,
   },
   sectionSubtitle: {
     fontSize: 14,
     color: '#64748B',
-    marginBottom: 16,
+    marginBottom: 8,
   },
 
   // Form
   formGroup: {
-    marginBottom: 16,
+    marginBottom: 8,
   },
   formLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: '#475569',
-    marginBottom: 8,
+    marginTop: 10,
+    marginBottom: 18,
   },
   formInputWrapper: {
     flexDirection: 'row',
@@ -1805,7 +1793,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
     paddingHorizontal: 14,
-    height: 52,
+    height: 46,
     gap: 10,
   },
   formInput: {
@@ -2495,5 +2483,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#DC2626',
+  },
+
+  // Profile Tab Selector
+  profileTabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 16,
+    marginTop: 6,
+  },
+  profileTabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 5,
+  },
+  profileTabBtnActive: {
+    backgroundColor: '#1e4620',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  profileTabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  profileTabTextActive: {
+    color: '#FFF',
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 10,
   },
 });

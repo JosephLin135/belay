@@ -1,95 +1,89 @@
-import { serve } from 'std/http/server.ts';
-import Stripe from 'https://esm.sh/stripe@13.10.0?target=deno';
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-type CreateCheckoutBody = {
+type CheckoutRequest = {
   priceId: string;
-  planId: string;
+  planId: 'weekly' | 'monthly' | 'yearly';
   redirectUrl: string;
+};
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
 
-const stripe = new Stripe(stripeSecretKey, { apiVersion: '2023-10-16' });
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'application/json',
+    },
+  });
+}
 
 serve(async (req) => {
-  if (req.method !== 'POST') {
-    return new Response('Method Not Allowed', { status: 405 });
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey || !stripeSecretKey) {
-    return new Response(JSON.stringify({ error: 'Missing server configuration.' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+  if (req.method !== 'POST') {
+    return jsonResponse({ error: 'Method Not Allowed' }, 405);
+  }
+
+  if (!supabaseUrl || !supabaseAnonKey || !stripeSecretKey) {
+    return jsonResponse({ error: 'Missing server configuration.' }, 500);
   }
 
   const authHeader = req.headers.get('Authorization') ?? '';
-  const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     global: { headers: { Authorization: authHeader } },
   });
 
-  const { data: authData, error: authError } = await supabaseAuth.auth.getUser();
+  const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData?.user) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ error: 'Unauthorized' }, 401);
   }
 
-  const { priceId, planId, redirectUrl } = (await req.json()) as CreateCheckoutBody;
+  const body = (await req.json()) as CheckoutRequest;
+  const { priceId, planId, redirectUrl } = body;
+
   if (!priceId || !planId || !redirectUrl) {
-    return new Response(JSON.stringify({ error: 'Missing required fields.' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ error: 'Missing required fields.' }, 400);
   }
 
-  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
-
-  const { data: profileData } = await supabaseAdmin
-    .from('profiles')
-    .select('stripe_customer_id')
-    .eq('id', authData.user.id)
-    .single();
-
-  let customerId = profileData?.stripe_customer_id as string | undefined;
-
-  if (!customerId) {
-    const customer = await stripe.customers.create({
-      email: authData.user.email ?? undefined,
-      metadata: { user_id: authData.user.id },
-    });
-    customerId = customer.id;
+  const form = new URLSearchParams();
+  form.set('mode', 'subscription');
+  form.set('line_items[0][price]', priceId);
+  form.set('line_items[0][quantity]', '1');
+  form.set('success_url', `${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`);
+  form.set('cancel_url', redirectUrl);
+  form.set('client_reference_id', authData.user.id);
+  form.set('metadata[planId]', planId);
+  form.set('metadata[userId]', authData.user.id);
+  if (authData.user.email) {
+    form.set('customer_email', authData.user.email);
   }
 
-  await supabaseAdmin
-    .from('profiles')
-    .upsert({
-      id: authData.user.id,
-      stripe_customer_id: customerId,
-      plan_id: planId,
-      plan_status: 'pending',
-      plan_updated_at: new Date().toISOString(),
-    });
-
-  const session = await stripe.checkout.sessions.create({
-    mode: 'subscription',
-    line_items: [{ price: priceId, quantity: 1 }],
-    customer: customerId,
-    success_url: `${redirectUrl}?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${redirectUrl}?canceled=1`,
-    metadata: {
-      user_id: authData.user.id,
-      plan_id: planId,
+  const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${stripeSecretKey}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
+    body: form.toString(),
   });
 
-  return new Response(JSON.stringify({ url: session.url }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  });
+  if (!stripeRes.ok) {
+    const errorText = await stripeRes.text();
+    return jsonResponse({ error: `Stripe error: ${errorText}` }, 400);
+  }
+
+  const data = await stripeRes.json();
+  return jsonResponse({ url: data.url, sessionId: data.id }, 200);
 });

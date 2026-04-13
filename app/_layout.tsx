@@ -3,8 +3,14 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { Keyboard, View } from 'react-native';
+import { useFonts, ChauPhilomeneOne_400Regular } from '@expo-google-fonts/chau-philomene-one';
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect, useState } from 'react';
+import { LoadingScreen } from '@/components/loading-screen';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+
+SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -12,6 +18,16 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const [fontsLoaded] = useFonts({ ChauPhilomeneOne_400Regular });
+  const [showLoader, setShowLoader] = useState(true);
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+      // Keep custom loading screen visible briefly, then fade out
+      setTimeout(() => setShowLoader(false), 600);
+    }
+  }, [fontsLoaded]);
 
   return (
     <View
@@ -29,6 +45,7 @@ export default function RootLayout() {
         </Stack>
         <StatusBar style="auto" />
       </ThemeProvider>
+      <LoadingScreen visible={showLoader} />
     </View>
   );
 }

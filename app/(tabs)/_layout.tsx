@@ -1,13 +1,11 @@
 import { Tabs } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { useRouter } from 'expo-router';
 import { Keyboard } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { View, ActivityIndicator } from 'react-native';
-import { ThemedText } from '@/components/themed-text';
+import { View } from 'react-native';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme'; 
+import { LoadingScreen } from '@/components/loading-screen';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { OnboardingFlow, checkOnboardingComplete, resetOnboarding } from '@/components/onboarding-flow';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -35,8 +33,6 @@ export default function TabLayout() {
   const [isLoading, setIsLoading] = useState(true);
   const [skipToAuth, setSkipToAuth] = useState(false); // Skip intro slides on sign out
   const [isRouteSetter, setIsRouteSetter] = useState(false);
-  const router = useRouter();
-
   // Load route setter status from database
   const loadRouteSetterStatus = async (userId?: string) => {
     try {
@@ -146,8 +142,8 @@ export default function TabLayout() {
   // Show loading state
   if (isLoading || showOnboarding === null) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAF9' }}>
-        <ActivityIndicator size="large" color="#1e4620" />
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <LoadingScreen visible />
       </View>
     );
   }

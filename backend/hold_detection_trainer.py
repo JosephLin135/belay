@@ -29,7 +29,7 @@ class HoldDetector:
             self.model = YOLO(model_path)
             print(f"✅ Loaded trained model from {model_path}")
         else:
-            self.model = YOLO('yolov8n.pt')  # Start with pretrained nano model
+            self.model = YOLO('ml/yolov8n.pt')  # Start with pretrained nano model
             print("📦 Loaded pretrained YOLOv8n - ready to fine-tune")
     
     def download_dataset(self, api_key, workspace, project, version=1):
